@@ -3,26 +3,33 @@
 Thumbs.db
 desktop.ini
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 *.swp
 
-# Node
+# Dependencies
 node_modules/
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+.pnpm-store/
 
 # Build output
 dist/
+dist-ssr/
 build/
 .cache/
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
 
 # Env & secrets
 .env
 .env.*
 !.env.example
 
-# Local data / backups
-*.local
-backup-*.json
+# Backups / local data
 turkey-farm-backup*.json
