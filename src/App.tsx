@@ -2,6 +2,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Icon, type IconName } from './components/Icon';
 import { Modal, useUI } from './components/Modal';
+import { InstallButton } from './components/InstallButton';
 import { alerts as getAlerts, totals, useApp, useSyncInfo } from './data/store';
 import { signOut } from './auth/AuthGate';
 import { format, today } from './lib/jalali';
@@ -225,6 +226,7 @@ export function App() {
               <span>{format(today(), 'full')}</span>
             </div>
             <div className="topbar-actions">
+              <InstallButton />
               <button className="icon-btn" onClick={showAlerts} title="هشدارها">
                 <Icon name="bell" size={19} />
               </button>

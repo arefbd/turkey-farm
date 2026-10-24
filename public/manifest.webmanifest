@@ -1,0 +1,56 @@
+{
+  "id": "./",
+  "name": "مزرعه بوقلمون — مدیریت هوشمند",
+  "short_name": "مزرعه بوقلمون",
+  "description": "سامانه جامع مدیریت مزرعه بوقلمون: ثبت روزانه، هزینه‌ها، خوراک، شرکا و گزارش‌ها",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#F7F4FF",
+  "theme_color": "#3A0B72",
+  "categories": ["business", "productivity", "finance"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "ثبت هزینه",
+      "short_name": "هزینه",
+      "url": "./#/expenses",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "داشبورد",
+      "short_name": "داشبورد",
+      "url": "./#/dashboard",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "کارها و یادآور",
+      "short_name": "کارها",
+      "url": "./#/tasks",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
