@@ -40,11 +40,13 @@ const toOptions = (opts: Array<string | Option> = []): Option[] =>
 
 /* ------------------------------ ورودی مبلغ ------------------------------ */
 function MoneyInput({
+  id,
   value,
   onChange,
   placeholder,
   invalid,
 }: {
+  id?: string;
   value: unknown;
   onChange: (v: number) => void;
   placeholder?: string;
@@ -65,6 +67,7 @@ function MoneyInput({
   return (
     <input
       className={'input num' + (invalid ? ' err' : '')}
+      id={id}
       inputMode="numeric"
       value={text}
       placeholder={placeholder ?? '۰'}
@@ -83,10 +86,12 @@ function MoneyInput({
 
 /* ------------------------------ ورودی تاریخ ----------------------------- */
 function DateInput({
+  id,
   value,
   onChange,
   invalid,
 }: {
+  id?: string;
   value: unknown;
   onChange: (v: string) => void;
   invalid?: boolean;
@@ -100,6 +105,7 @@ function DateInput({
       <div className="date-wrap">
         <input
           className={'input num' + (invalid ? ' err' : '')}
+          id={id}
           readOnly
           value={text}
           placeholder="۱۴۰۵/۰۸/۰۲"
@@ -202,6 +208,7 @@ export function Field({
   } else if (def.type === 'money') {
     input = (
       <MoneyInput
+        id={id}
         value={value}
         onChange={(v) => setValue(def.name, v)}
         placeholder={def.placeholder}
@@ -210,7 +217,12 @@ export function Field({
     );
   } else if (def.type === 'date') {
     input = (
-      <DateInput value={value} onChange={(v) => setValue(def.name, v)} invalid={invalid} />
+      <DateInput
+        id={id}
+        value={value}
+        onChange={(v) => setValue(def.name, v)}
+        invalid={invalid}
+      />
     );
   } else if (def.type === 'number') {
     input = (
