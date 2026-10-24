@@ -1,7 +1,7 @@
 /* بررسی قابلیت نصب PWA روی بیلد نهایی */
 const puppeteer = require('puppeteer-core');
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const BASE = 'http://127.0.0.1:4173/';
+const BASE = process.argv[2] || 'https://arefbd.github.io/turkey-farm/';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];

@@ -3,7 +3,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { detach, hydrate, resync, useSyncInfo } from '../data/store';
+import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
+import { InstallHelp } from '../components/InstallButton';
 
 export async function signOut() {
   detach();
@@ -33,6 +35,7 @@ function Splash({ text }: { text: string }) {
 
 /* ------------------------------- فرم ورود -------------------------------- */
 function AuthScreen() {
+  const ui = useUI();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -128,6 +131,16 @@ function AuthScreen() {
           ثبت‌نام عمومی بسته است. حساب مدیر را از
           <br />
           Supabase → Authentication → Users بسازید.
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: 10 }}>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={() => ui.open(<InstallHelp onClose={ui.close} />)}
+          >
+            <Icon name="download" size={15} /> نصب روی گوشی یا کامپیوتر
+          </button>
         </div>
       </div>
     </div>

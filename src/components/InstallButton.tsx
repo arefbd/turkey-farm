@@ -30,7 +30,7 @@ const GUIDE: Array<{ icon: string; title: string; steps: string }> = [
   },
 ];
 
-function InstallHelp({ onClose }: { onClose: () => void }) {
+export function InstallHelp({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="نصب روی دستگاه"
