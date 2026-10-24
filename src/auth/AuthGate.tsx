@@ -33,45 +33,30 @@ function Splash({ text }: { text: string }) {
 
 /* ------------------------------- فرم ورود -------------------------------- */
 function AuthScreen() {
-  const [mode, setMode] = useState<'in' | 'up'>('in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setNotice('');
     if (!email.trim() || !password) {
       setError('ایمیل و رمز عبور را وارد کنید');
       return;
     }
     setBusy(true);
     try {
-      if (mode === 'in') {
-        const { error: err } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (err) throw err;
-      } else {
-        const { data, error: err } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-        });
-        if (err) throw err;
-        if (!data.session) {
-          setNotice('ثبت‌نام انجام شد. لینک تایید به ایمیل شما ارسال شد؛ پس از تایید وارد شوید.');
-          setMode('in');
-        }
-      }
+      const { error: err } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (err) throw err;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/Invalid login credentials/i.test(msg)) setError('ایمیل یا رمز عبور نادرست است');
-      else if (/already registered/i.test(msg)) setError('این ایمیل قبلاً ثبت شده است');
-      else if (/Password should be at least/i.test(msg)) setError('رمز عبور باید حداقل ۶ کاراکتر باشد');
+      else if (/Email not confirmed/i.test(msg))
+        setError('ایمیل این حساب تایید نشده است؛ از داشبورد Supabase تایید کنید');
       else setError(msg);
     } finally {
       setBusy(false);
@@ -88,34 +73,11 @@ function AuthScreen() {
         padding: 20,
       }}
     >
-      <div className="card" style={{ width: '100%', maxWidth: 390, padding: 22 }}>
+      <div className="card" style={{ width: '100%', maxWidth: 380, padding: 22 }}>
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
           <div style={{ fontSize: 40 }}>🦃</div>
           <h2 style={{ fontSize: 17, margin: '8px 0 2px' }}>مزرعه بوقلمون</h2>
-          <div className="hint">برای دسترسی به داده‌های مزرعه وارد شوید</div>
-        </div>
-
-        <div className="tabs" style={{ marginBottom: 14 }}>
-          <button
-            type="button"
-            className={'tab' + (mode === 'in' ? ' active' : '')}
-            onClick={() => {
-              setMode('in');
-              setError('');
-            }}
-          >
-            ورود
-          </button>
-          <button
-            type="button"
-            className={'tab' + (mode === 'up' ? ' active' : '')}
-            onClick={() => {
-              setMode('up');
-              setError('');
-            }}
-          >
-            ثبت‌نام
-          </button>
+          <div className="hint">ورود مدیر سامانه</div>
         </div>
 
         <form onSubmit={submit} className="form-grid">
@@ -125,10 +87,10 @@ function AuthScreen() {
               className="input"
               type="email"
               dir="ltr"
-              autoComplete="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="admin@example.com"
             />
           </div>
           <div className="field full">
@@ -137,7 +99,7 @@ function AuthScreen() {
               className="input"
               type="password"
               dir="ltr"
-              autoComplete={mode === 'in' ? 'current-password' : 'new-password'}
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -155,26 +117,17 @@ function AuthScreen() {
             </div>
           ) : null}
 
-          {notice ? (
-            <div className="field full">
-              <div className="alert-item ok">
-                <span className="ai-ic">✅</span>
-                <div>
-                  <p>{notice}</p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
           <div className="field full">
             <button className="btn primary block" type="submit" disabled={busy}>
-              {busy ? 'کمی صبر کنید…' : mode === 'in' ? 'ورود به سامانه' : 'ساخت حساب'}
+              {busy ? 'کمی صبر کنید…' : 'ورود به سامانه'}
             </button>
           </div>
         </form>
 
-        <div className="hint" style={{ marginTop: 12, textAlign: 'center' }}>
-          داده‌ها روی Supabase ذخیره می‌شوند و فقط برای همین حساب قابل مشاهده‌اند.
+        <div className="hint" style={{ marginTop: 14, textAlign: 'center', lineHeight: 1.9 }}>
+          ثبت‌نام عمومی بسته است. حساب مدیر را از
+          <br />
+          Supabase → Authentication → Users بسازید.
         </div>
       </div>
     </div>
