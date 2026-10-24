@@ -144,9 +144,10 @@ export function Settings() {
         </div>
 
         <div className="card">
-          <SectionHead title="پشتیبان‌گیری و بازیابی" sub="داده‌ها روی همین دستگاه ذخیره می‌شوند" />
+          <SectionHead title="پشتیبان‌گیری و بازیابی" sub="داده‌ها روی Supabase ذخیره می‌شوند" />
           <p className="hint" style={{ marginBottom: 12 }}>
-            برای انتقال اطلاعات به دستگاه دیگر یا نگهداری نسخه پشتیبان، فایل JSON دریافت کنید.
+            داده‌ها روی حساب Supabase شما ذخیره می‌شوند و در هر دستگاه دیگری هم در دسترس‌اند. برای
+            نگهداری نسخه آفلاین، فایل JSON بگیرید.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button className="btn block" onClick={backup}>

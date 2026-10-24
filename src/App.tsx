@@ -2,7 +2,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Icon, type IconName } from './components/Icon';
 import { Modal, useUI } from './components/Modal';
-import { alerts as getAlerts, totals, useApp } from './data/store';
+import { alerts as getAlerts, totals, useApp, useSyncInfo } from './data/store';
+import { signOut } from './auth/AuthGate';
 import { format, today } from './lib/jalali';
 import { short } from './lib/format';
 import { Dashboard } from './pages/Dashboard';
@@ -95,6 +96,7 @@ function Page({ name, param }: { name: string; param: string }) {
 /* -------------------------------- برنامه -------------------------------- */
 export function App() {
   const s = useApp();
+  const sync = useSyncInfo();
   const ui = useUI();
   const route = useRoute();
   const activeNav = route.name === 'flock' ? 'flocks' : route.name;
@@ -236,6 +238,22 @@ export function App() {
               <button className="btn primary sm no-print" onClick={quickAdd}>
                 <Icon name="plus" size={16} />
                 <span className="q-label"> ثبت جدید</span>
+              </button>
+              <span
+                className={'badge no-print ' + (sync.pending > 0 ? 'gray' : 'green')}
+                title="وضعیت ذخیره‌سازی در Supabase"
+              >
+                {sync.pending > 0 ? 'در حال ذخیره…' : 'همگام'}
+              </span>
+              <button
+                className="icon-btn no-print"
+                title="خروج از حساب"
+                onClick={async () => {
+                  const ok = await ui.confirm('از حساب خارج می‌شوید؟', { ok: 'خروج' });
+                  if (ok) void signOut();
+                }}
+              >
+                <Icon name="close" size={18} />
               </button>
               <span
                 className="avatar"

@@ -1,13 +1,26 @@
 /**
  * استور مرکزی — React 19 + useSyncExternalStore
  * وضعیت تغییرناپذیر (immutable) است؛ هر تغییر یک snapshot تازه می‌سازد
- * و همه کامپوننت‌های مشترک دوباره رندر می‌شوند. ذخیره‌سازی در localStorage.
+ * و همه کامپوننت‌های مشترک دوباره رندر می‌شوند.
+ *
+ * ذخیره‌سازی: Supabase (جدول tf_records + tf_settings) با همگام‌سازی تفاضلی —
+ * فقط رکوردهای تغییرکرده به سرور می‌روند.
  */
 import { useSyncExternalStore } from 'react';
 import * as J from '../lib/jalali';
 import { setFaDigits } from '../lib/jalali';
-import { blank, seed, STORAGE_KEY, uid } from './seed';
+import { blank, seed, uid } from './seed';
 import { CAT_MAP } from './categories';
+import {
+  COLLECTIONS,
+  assemble,
+  deleteAllRecords,
+  deleteRecords,
+  fetchAll,
+  insertRecords,
+  saveSettings,
+  upsertRecord,
+} from './remote';
 import type {
   AlertItem,
   AppState,
@@ -36,27 +49,7 @@ export function num(v: unknown): number {
 const sum = <T,>(arr: T[], key?: keyof T): number =>
   arr.reduce((a, o) => a + (key ? num(o[key]) : num(o)), 0);
 
-/* ------------------------------ بارگذاری ------------------------------ */
-function load(): AppState | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      // مهاجرت از نسخه قدیمی (v2)
-      const legacy = localStorage.getItem('turkeyFarm.v2');
-      if (legacy) {
-        const parsed = JSON.parse(legacy) as AppState;
-        if (parsed && parsed.partners) return normalize(parsed);
-      }
-      return null;
-    }
-    const parsed = JSON.parse(raw) as AppState;
-    if (!parsed || !parsed.partners) return null;
-    return normalize(parsed);
-  } catch {
-    return null;
-  }
-}
-
+/* ------------------------------ نرمال‌سازی ------------------------------ */
 function normalize(s: AppState): AppState {
   const cols: CollectionKey[] = [
     'expenses',
@@ -88,41 +81,146 @@ function normalize(s: AppState): AppState {
 }
 
 /* ------------------------------ هسته استور ------------------------------ */
-let state: AppState;
+export type SyncStatus = 'loading' | 'ready' | 'error';
+
+export interface SyncInfo {
+  status: SyncStatus;
+  error: string;
+  userId: string | null;
+  pending: number;
+}
+
+let state: AppState = blank();
+let userId: string | null = null;
+let synced: AppState = state;
+let pending = 0;
+let syncInfo: SyncInfo = { status: 'loading', error: '', userId: null, pending: 0 };
+
 const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((l) => l());
+
+function setSync(patch: Partial<SyncInfo>) {
+  syncInfo = { ...syncInfo, ...patch };
+  emit();
+}
+
+function fail(e: unknown) {
+  setSync({ status: 'error', error: e instanceof Error ? e.message : String(e) });
+}
+
+function commit(next: AppState) {
+  state = next;
+  setFaDigits(next.settings.persianDigits !== false);
+  emit();
+  persist();
+}
+
+/** همگام‌سازی تفاضلی — فقط رکوردهای تغییرکرده به سرور می‌روند */
+async function syncDiff(prev: AppState, next: AppState) {
+  const jobs: Array<Promise<unknown>> = [];
+
+  for (const col of COLLECTIONS) {
+    const prevList = prev[col] as unknown as Array<Record<string, unknown>>;
+    const nextList = next[col] as unknown as Array<Record<string, unknown>>;
+    const prevMap = new Map(prevList.map((o) => [String(o.id), o]));
+    const nextIds = new Set(nextList.map((o) => String(o.id)));
+
+    // مقایسه مرجع: آبجکت‌های تغییرنکرده همان مرجع قبلی را دارند
+    const changed = nextList.filter((o) => prevMap.get(String(o.id)) !== o);
+    const removed = [...prevMap.keys()].filter((id) => !nextIds.has(id));
+
+    if (changed.length) {
+      jobs.push(Promise.all(changed.map((o) => upsertRecord(col, o))));
+    }
+    if (removed.length) jobs.push(deleteRecords(removed));
+  }
+
+  if (prev.settings !== next.settings && userId) {
+    jobs.push(saveSettings(userId, next.settings));
+  }
+
+  await Promise.all(jobs);
+}
 
 function persist() {
+  const prev = synced;
+  synced = state;
+  if (!userId) return;
+
+  pending += 1;
+  setSync({ pending });
+
+  void syncDiff(prev, state)
+    .then(() => {
+      pending = Math.max(0, pending - 1);
+      setSync({ pending, status: pending ? syncInfo.status : 'ready', error: '' });
+    })
+    .catch((e) => {
+      pending = Math.max(0, pending - 1);
+      fail(e);
+    });
+}
+
+/** بارگذاری داده‌های کاربر از Supabase */
+export async function hydrate(uid: string) {
+  userId = uid;
+  setSync({ userId: uid, status: 'loading', error: '' });
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const { records, settings } = await fetchAll();
+    const assembled = assemble(records, settings, blank().settings);
+    state = { ...blank(), ...assembled, version: 2 };
+    synced = state;
+    setFaDigits(state.settings.persianDigits !== false);
+    setSync({ status: 'ready', error: '' });
   } catch (e) {
-    console.warn('ذخیره‌سازی ناموفق', e);
+    fail(e);
   }
 }
 
-function commit(next: AppState, save = true) {
-  state = next;
-  setFaDigits(next.settings.persianDigits !== false);
-  if (save) persist();
-  listeners.forEach((l) => l());
+/** خروج — پاک کردن وضعیت از حافظه */
+export function detach() {
+  userId = null;
+  state = blank();
+  synced = state;
+  pending = 0;
+  setSync({ userId: null, status: 'loading', error: '', pending: 0 });
 }
 
-function init() {
-  const loaded = load();
-  state = loaded ?? seed();
-  setFaDigits(state.settings.persianDigits !== false);
-  if (!loaded) persist();
+/** بازفرست کامل وضعیت به سرور (برای بازیابی پس از خطا) */
+export async function resync() {
+  if (!userId) return;
+  setSync({ status: 'loading', error: '' });
+  try {
+    await deleteAllRecords(userId);
+    for (const col of COLLECTIONS) {
+      const rows = state[col] as unknown as Array<Record<string, unknown>>;
+      if (rows.length) await insertRecords(col, rows);
+    }
+    await saveSettings(userId, state.settings);
+    synced = state;
+    setSync({ status: 'ready', error: '' });
+  } catch (e) {
+    fail(e);
+  }
 }
-init();
 
 const subscribe = (cb: () => void) => {
   listeners.add(cb);
-  return () => listeners.delete(cb);
+  return () => {
+    listeners.delete(cb);
+  };
 };
 const getSnapshot = () => state;
+const getSyncSnapshot = () => syncInfo;
 
 /** خواندن وضعیت در کامپوننت — با هر تغییر دوباره رندر می‌شود */
 export function useApp(): AppState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** وضعیت همگام‌سازی با Supabase */
+export function useSyncInfo(): SyncInfo {
+  return useSyncExternalStore(subscribe, getSyncSnapshot, getSyncSnapshot);
 }
 
 export function getState(): AppState {
