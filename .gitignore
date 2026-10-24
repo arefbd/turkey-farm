@@ -1,0 +1,28 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+.cache/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Local data / backups
+*.local
+backup-*.json
+turkey-farm-backup*.json
