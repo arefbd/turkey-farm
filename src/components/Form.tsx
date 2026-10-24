@@ -1,8 +1,10 @@
 /** فیلدهای فرم و مودال فرم عمومی (اسکیمامحور) */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, useUI } from './Modal';
+import { Icon } from './Icon';
+import { JalaliDatePicker } from './DatePicker';
 import { num } from '../data/store';
-import { faDigits, norm, toEn, toFa, today } from '../lib/jalali';
+import { faDigits, norm, toEn, toFa } from '../lib/jalali';
 
 export type FormValues = Record<string, unknown>;
 
@@ -89,50 +91,38 @@ function DateInput({
   onChange: (v: string) => void;
   invalid?: boolean;
 }) {
-  const initial = String(value ?? '');
-  const [text, setText] = useState(() =>
-    initial ? (faDigits ? toFa(initial) : initial) : '',
-  );
-
-  useEffect(() => {
-    const v = String(value ?? '');
-    setText(v ? (faDigits ? toFa(v) : v) : '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  const [open, setOpen] = useState(false);
+  const raw = String(value ?? '');
+  const text = raw ? (faDigits ? toFa(raw) : raw) : '';
 
   return (
-    <div className="date-wrap">
-      <input
-        className={'input num' + (invalid ? ' err' : '')}
-        inputMode="numeric"
-        value={text}
-        placeholder="۱۴۰۵/۰۸/۰۲"
-        onChange={(e) => {
-          const raw = e.target.value;
-          setText(raw);
-          const nv = norm(raw);
-          if (nv) onChange(nv);
-        }}
-        onBlur={() => {
-          const nv = norm(text);
-          if (nv) {
-            setText(faDigits ? toFa(nv) : nv);
-            onChange(nv);
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="date-now"
-        onClick={() => {
-          const t = today();
-          setText(faDigits ? toFa(t) : t);
-          onChange(t);
-        }}
-      >
-        امروز
-      </button>
-    </div>
+    <>
+      <div className="date-wrap">
+        <input
+          className={'input num' + (invalid ? ' err' : '')}
+          readOnly
+          value={text}
+          placeholder="۱۴۰۵/۰۸/۰۲"
+          onClick={() => setOpen(true)}
+          onFocus={() => setOpen(true)}
+        />
+        <button
+          type="button"
+          className="date-now"
+          onClick={() => setOpen(true)}
+          aria-label="انتخاب تاریخ"
+        >
+          <Icon name="calendar" size={15} />
+        </button>
+      </div>
+      {open ? (
+        <JalaliDatePicker
+          value={raw}
+          onPick={(v) => onChange(v)}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 
