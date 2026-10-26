@@ -232,6 +232,60 @@ export function Partners() {
       </div>
 
       <div className="card mt">
+        <SectionHead title="سهم شرکا از معاملات" sub="بر اساس درصد تعیین‌شده در هر معامله" />
+        {s.transactions.length ? (
+          <>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>شریک</th>
+                    <th>سهم از خرید</th>
+                    <th>سهم از فروش</th>
+                    <th>خالص (فروش − خرید)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.partners.map((p) => {
+                    let buy = 0;
+                    let sell = 0;
+                    s.transactions.forEach((t) => {
+                      const sh = (t.shares || []).find((x) => x.partnerId === p.id);
+                      if (!sh) return;
+                      if (t.type === 'purchase') buy += num(sh.amount);
+                      else if (t.type === 'purchase_return') buy -= num(sh.amount);
+                      else if (t.type === 'sale') sell += num(sh.amount);
+                      else if (t.type === 'sale_return') sell -= num(sh.amount);
+                    });
+                    const net = sell - buy;
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <b>{p.name}</b>
+                        </td>
+                        <td className="num-cell">{n(buy)}</td>
+                        <td className="num-cell">{n(sell)}</td>
+                        <td className="num-cell" style={{ color: net >= 0 ? '#059669' : '#DC2626' }}>
+                          {n(net)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="hint" style={{ marginTop: 8 }}>
+              مبالغ بر اساس سهم درصدی ثبت‌شده در هر معامله محاسبه شده است.
+            </div>
+          </>
+        ) : (
+          <div className="hint" style={{ padding: '8px 2px' }}>
+            هنوز معامله‌ای ثبت نشده است. پس از ثبت معامله، سهم هر شریک اینجا نمایش داده می‌شود.
+          </div>
+        )}
+      </div>
+
+      <div className="card mt">
         <SectionHead title="پیشنهاد تسویه نهایی" sub="برای برابر شدن مانده حساب شرکا" />
         {transfers.length ? (
           transfers.map((t, i) => (
