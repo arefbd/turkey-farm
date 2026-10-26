@@ -7,14 +7,16 @@ import { Bar, Chips, Empty, PageHead, SectionHead, Stat } from '../components/ui
 import {
   activeFlocks,
   byCategory,
+  cashSeries,
   filterExpenses,
   flockStats,
   monthlySeries,
+  receivables,
   settlement,
   totals,
   useApp,
 } from '../data/store';
-import { parse, pad, today } from '../lib/jalali';
+import { format, pad, parse, today } from '../lib/jalali';
 import { download, n, pct, short, toCsv } from '../lib/format';
 import type { ExpenseFilter } from '../data/types';
 
@@ -45,6 +47,8 @@ export function Reports() {
   const t = totals(s, filter);
   const cats = byCategory(s, filter);
   const series = monthlySeries(s, 6);
+  const cash = cashSeries(s, 6);
+  const rec = receivables(s);
   const settle = settlement(s, filter);
   const active = activeFlocks(s)[0];
   const fs = active ? flockStats(s, active.id) : null;
@@ -179,6 +183,112 @@ export function Reports() {
           <Stat icon="🌾" label="دان به ازای هر پرنده" value={n(fs.feedPerBird, 1)} unit="کیلو" />
         </div>
       ) : null}
+
+      <div className="grid grid-side mt">
+        <div className="card">
+          <SectionHead title="جریان نقدی" sub="۶ ماه اخیر — بر اساس اسناد دریافت/پرداخت" />
+          <Bars
+            labels={cash.map((c) => c.label)}
+            series={[
+              { values: cash.map((c) => c.income), color: '#10B981' },
+              { values: cash.map((c) => c.expense), color: '#F87171' },
+            ]}
+            height={200}
+          />
+          <div className="chart-legend">
+            <span>
+              <i style={{ background: '#10B981' }} />
+              دریافت
+            </span>
+            <span>
+              <i style={{ background: '#F87171' }} />
+              پرداخت
+            </span>
+          </div>
+        </div>
+
+        <div className="card">
+          <SectionHead title="مطالبات و بدهی‌ها" sub="بر اساس فاکتورهای باز" />
+          <div className="kv">
+            <span>طلب از مشتریان</span>
+            <b style={{ color: '#059669' }}>{short(rec.receivable)}</b>
+          </div>
+          <div className="kv">
+            <span>بدهی به تامین‌کنندگان</span>
+            <b style={{ color: '#DC2626' }}>{short(rec.payable)}</b>
+          </div>
+          <div className="kv">
+            <span>خالص (طلب − بدهی)</span>
+            <b style={{ color: rec.net >= 0 ? '#059669' : '#DC2626' }}>{short(rec.net)}</b>
+          </div>
+          <div className="kv">
+            <span>سررسیدگذشته</span>
+            <b style={{ color: rec.overdue > 0 ? '#DC2626' : '#059669' }}>{short(rec.overdue)}</b>
+          </div>
+          <div className="kv">
+            <span>نرخ وصول</span>
+            <b>{pct(rec.billed ? (rec.collected / rec.billed) * 100 : 0, 0)}</b>
+          </div>
+          {rec.unlinkedPayments > 0 ? (
+            <div className="hint" style={{ marginTop: 6 }}>
+              {n(rec.unlinkedPayments)} سند دریافت/پرداخت به فاکتوری وصل نشده است و در این جدول
+              لحاظ نشده.
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="card mt">
+        <SectionHead title="ریز فاکتورهای باز" sub={`${n(rec.items.filter((i) => i.remaining > 0).length)} فاکتور با مانده`} />
+        {rec.items.length ? (
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>سند</th>
+                  <th>طرف حساب</th>
+                  <th>نوع</th>
+                  <th>مبلغ</th>
+                  <th>تسویه‌شده</th>
+                  <th>مانده</th>
+                  <th>سررسید</th>
+                  <th>وضعیت</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rec.items.slice(0, 20).map((i) => (
+                  <tr key={i.txId}>
+                    <td className="num-cell">{i.code}</td>
+                    <td>
+                      <b>{i.personName}</b>
+                    </td>
+                    <td>{i.type === 'sale' ? 'فروش' : 'خرید'}</td>
+                    <td className="num-cell">{n(i.total)}</td>
+                    <td className="num-cell">{n(i.paid)}</td>
+                    <td className="num-cell">
+                      <b style={{ color: i.remaining > 0 ? '#DC2626' : '#059669' }}>
+                        {n(i.remaining)}
+                      </b>
+                    </td>
+                    <td>{i.dueDate ? format(i.dueDate, 'short') : '—'}</td>
+                    <td>
+                      {i.remaining === 0 ? (
+                        <span className="badge green">تسویه شد</span>
+                      ) : i.overdueDays > 0 ? (
+                        <span className="badge red">{n(i.overdueDays)} روز گذشته</span>
+                      ) : (
+                        <span className="badge gray">باز</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty title="فاکتوری ثبت نشده" text="با ثبت معامله خرید یا فروش، این جدول پر می‌شود" />
+        )}
+      </div>
 
       <div className="card mt">
         <SectionHead title="مقایسه ماهانه" sub="۶ ماه اخیر" />

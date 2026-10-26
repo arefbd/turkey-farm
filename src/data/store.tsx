@@ -508,6 +508,104 @@ export function soldCountForFlock(s: AppState, flockId: string): number {
   return Math.max(0, Math.round(n));
 }
 
+/* ---------------------- جریان نقدی و مطالبات ---------------------- */
+
+export interface OpenItem {
+  txId: string;
+  code: string;
+  date: string;
+  type: string;
+  personId: string;
+  personName: string;
+  total: number;
+  paid: number;
+  remaining: number;
+  dueDate: string;
+  overdueDays: number;
+}
+
+/** فاکتورهای باز: مبلغ فاکتور منهای دریافت/پرداخت‌های مرتبط */
+export function openItems(s: AppState): OpenItem[] {
+  const paidByTx: Record<string, number> = {};
+  s.payments.forEach((p) => {
+    if (!p.transactionId) return;
+    paidByTx[p.transactionId] = (paidByTx[p.transactionId] || 0) + num(p.amount);
+  });
+
+  return s.transactions
+    .filter((t) => t.type === 'sale' || t.type === 'purchase')
+    .map((t) => {
+      const paid = paidByTx[t.id] || 0;
+      const remaining = Math.max(0, num(t.total) - paid);
+      const due = t.dueDate || '';
+      const overdueDays = remaining > 0 && due ? Math.max(0, J.diff(due, J.today())) : 0;
+      return {
+        txId: t.id,
+        code: t.code,
+        date: t.date,
+        type: t.type,
+        personId: t.personId,
+        personName: t.personName || personName(s, t.personId),
+        total: num(t.total),
+        paid,
+        remaining,
+        dueDate: due,
+        overdueDays,
+      };
+    })
+    .sort((a, b) => b.overdueDays - a.overdueDays || b.date.localeCompare(a.date));
+}
+
+export interface ReceivableSummary {
+  items: OpenItem[];
+  receivable: number;
+  payable: number;
+  net: number;
+  overdue: number;
+  unlinkedPayments: number;
+  collected: number;
+  billed: number;
+}
+
+export function receivables(s: AppState): ReceivableSummary {
+  const items = openItems(s);
+  const receivable = items
+    .filter((i) => i.type === 'sale')
+    .reduce((a, i) => a + i.remaining, 0);
+  const payable = items
+    .filter((i) => i.type === 'purchase')
+    .reduce((a, i) => a + i.remaining, 0);
+  const overdue = items
+    .filter((i) => i.overdueDays > 0)
+    .reduce((a, i) => a + i.remaining, 0);
+  const billed = items.reduce((a, i) => a + i.total, 0);
+  const collected = items.reduce((a, i) => a + i.paid, 0);
+
+  return {
+    items,
+    receivable,
+    payable,
+    net: receivable - payable,
+    overdue,
+    unlinkedPayments: s.payments.filter((p) => !p.transactionId).length,
+    collected,
+    billed,
+  };
+}
+
+/** جریان نقدی ماهانه بر اساس اسناد دریافت/پرداخت */
+export function cashSeries(s: AppState, n = 6) {
+  return J.lastMonths(n).map((m) => {
+    const list = s.payments.filter((p) => p.date.slice(0, 7) === m.key);
+    return {
+      key: m.key,
+      label: m.label,
+      income: list.filter((p) => p.kind === 'in').reduce((a, p) => a + num(p.amount), 0),
+      expense: list.filter((p) => p.kind === 'out').reduce((a, p) => a + num(p.amount), 0),
+    };
+  });
+}
+
 /** حرکات یک کالا، جدیدترین اول */
 export function stockMovesFor(s: AppState, itemId: string): StockMove[] {
   return s.stockMoves
@@ -849,6 +947,18 @@ export function alerts(s: AppState): AlertItem[] {
       icon: '⚖️',
       title: 'احتمال دوباره‌شماری خرید',
       text: `${goodsExpenses.length} هزینه از دسته‌های کالایی (دان، جوجه، گوشت، واکسن) ثبت شده — اگر همان خرید در «معاملات» هم هست، سود دو بار کم می‌شود.`,
+    });
+  }
+
+  const rec = receivables(s);
+  if (rec.overdue > 0) {
+    out.push({
+      level: 'danger',
+      icon: '⏳',
+      title: 'مطالبات سررسیدگذشته',
+      text:
+        Math.round(rec.overdue).toLocaleString('en-US') +
+        ' تومان از فاکتورهای فروش از سررسید گذشته است.',
     });
   }
 
