@@ -9,6 +9,7 @@ import {
   num,
   personById,
   personLabel,
+  txStockDelta,
   txTotal,
   useApp,
 } from '../data/store';
@@ -178,8 +179,20 @@ export function TransactionForm({
       note,
     };
 
-    if (editing) actions.update('transactions', editing.id, data as Partial<Transaction>);
-    else actions.add('transactions', data as Transaction);
+    // به‌روزرسانی موجودی انبار: ابتدا اثر قبلی برگشت، سپس اثر جدید اعمال می‌شود
+    if (editing) {
+      const back = txStockDelta(editing, -1);
+      const fwd = txStockDelta(data as unknown as Transaction, 1);
+      const merged: Record<string, number> = { ...back };
+      Object.entries(fwd).forEach(([k, v]) => {
+        merged[k] = (merged[k] || 0) + v;
+      });
+      actions.adjustStock(merged);
+      actions.update('transactions', editing.id, data as Partial<Transaction>);
+    } else {
+      actions.adjustStock(txStockDelta(data as unknown as Transaction, 1));
+      actions.add('transactions', data as Transaction);
+    }
     toast(editing ? 'معامله ویرایش شد' : 'معامله ثبت شد');
     onClose();
   };
@@ -348,9 +361,24 @@ export function TransactionForm({
                 <td>
                   <input
                     className="input"
+                    list="inv-item-names"
                     value={r.name}
-                    placeholder="مثلاً جوجه یک روزه"
-                    onChange={(e) => setRow(r.key, { name: e.target.value })}
+                    placeholder="انتخاب از انبار یا تایپ دستی"
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      const hit = s.inventory.find(
+                        (x) => x.name.trim() === name.trim() && x.active !== false,
+                      );
+                      setRow(r.key, {
+                        name,
+                        ...(hit
+                          ? {
+                              unit: hit.unit || r.unit,
+                              price: num(r.price) || num(hit.pricePerKg),
+                            }
+                          : {}),
+                      });
+                    }}
                   />
                 </td>
                 <td>
@@ -397,6 +425,17 @@ export function TransactionForm({
           </tbody>
         </table>
       </div>
+
+      <datalist id="inv-item-names">
+        {s.inventory
+          .filter((i) => i.active !== false)
+          .map((i) => (
+            <option key={i.id} value={i.name}>
+              {i.code ? i.code + ' — ' : ''}
+              {n(i.qty)} {i.unit}
+            </option>
+          ))}
+      </datalist>
 
       <button
         className="btn sm mt-sm"
@@ -511,7 +550,8 @@ export function PaymentForm({
     },
     {
       name: 'payerId',
-      label: 'پرداخت‌کننده (شریک)',
+      label: (v) =>
+        v.kind === 'in' ? 'دریافت‌کننده (شریک)' : 'پرداخت‌کننده (شریک)',
       type: 'select',
       col: 'half',
       options: [{ value: '', label: '—' }].concat(

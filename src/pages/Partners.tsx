@@ -177,6 +177,7 @@ export function Partners() {
                 <th>آورده</th>
                 <th>پرداخت مستقیم</th>
                 <th>سهم از هزینه‌ها</th>
+                <th>سهم از معاملات</th>
                 <th>مانده</th>
                 <th>وضعیت</th>
               </tr>
@@ -193,8 +194,15 @@ export function Partners() {
                     <td className="num-cell">{n(r.capital)}</td>
                     <td className="num-cell">{n(r.paidDirect)}</td>
                     <td className="num-cell">{n(r.shareExp)}</td>
+                    <td
+                      className="num-cell"
+                      style={{ color: r.shareTx >= 0 ? '#059669' : '#DC2626' }}
+                      title={`خرید: ${n(r.shareBuy)} — فروش: ${n(r.shareSell)}`}
+                    >
+                      {n(r.shareTx)}
+                    </td>
                     <td className="num-cell" style={{ color: pos ? '#059669' : '#DC2626' }}>
-                      {n(r.balance)}
+                      <b>{n(r.balance)}</b>
                     </td>
                     <td>
                       <span className={'badge ' + (pos ? 'green' : 'red')}>
@@ -214,6 +222,12 @@ export function Partners() {
                 <td className="num-cell">{n(settle.totalExp)}</td>
                 <td
                   className="num-cell"
+                  style={{ color: settle.txNet >= 0 ? '#059669' : '#DC2626' }}
+                >
+                  {n(settle.txNet)}
+                </td>
+                <td
+                  className="num-cell"
                   style={{ color: settle.surplus >= 0 ? '#059669' : '#DC2626' }}
                 >
                   {n(settle.surplus)}
@@ -225,9 +239,11 @@ export function Partners() {
             </tbody>
           </table>
         </div>
-        <div className="hint" style={{ marginTop: 8 }}>
-          مانده هر شریک = آورده + پرداخت مستقیم − سهم او از هزینه‌ها. عدد جمع، نقدینگی باقی‌مانده در
-          صندوق مشترک است.
+        <div className="hint" style={{ marginTop: 8, lineHeight: 1.9 }}>
+          مانده هر شریک = آورده + پرداخت مستقیم − سهم از هزینه‌ها + سهم از معاملات
+          <br />
+          «سهم از معاملات» = سهم او از فروش منهای سهم او از بهای خرید (بر اساس درصد ثبت‌شده در هر
+          معامله). عدد مثبت یعنی طلبکار و منفی یعنی بدهکار.
         </div>
       </div>
 
@@ -293,7 +309,7 @@ export function Partners() {
               <span className="ai-ic">💸</span>
               <div>
                 <h5>
-                  {t.from} → {t.to}
+                  {t.from} باید به {t.to} بپردازد
                 </h5>
                 <p>
                   مبلغ <b>{money(t.amount, s.settings.currency)}</b> پرداخت شود.

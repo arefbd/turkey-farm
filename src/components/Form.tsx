@@ -24,7 +24,8 @@ export type FieldType =
 
 export interface FieldDef {
   name: string;
-  label: string;
+  /** برچسب ثابت یا تابعی از مقادیر جاری */
+  label: string | ((values: FormValues) => string);
   type: FieldType;
   col?: 'half' | 'third' | 'full';
   required?: boolean;
@@ -147,10 +148,11 @@ export function Field({
   const col = def.col === 'half' ? 'half' : def.col === 'third' ? 'third' : 'full';
   const value = values[def.name];
   const id = 'fld-' + def.name;
+  const labelText = typeof def.label === 'function' ? def.label(values) : def.label;
 
   const label = (
     <label className="lbl" htmlFor={id}>
-      {def.label}
+      {labelText}
       {def.required ? <span className="req"> *</span> : null}
     </label>
   );
@@ -167,7 +169,7 @@ export function Field({
             onChange={(e) => setValue(def.name, e.target.checked)}
           />
           <span className="switch" />
-          <span>{def.label}</span>
+          <span>{labelText}</span>
         </label>
         {hint}
       </div>
@@ -300,12 +302,12 @@ export function FormModal({
       const v = values[f.name];
       const empty = v === '' || v == null || (f.type === 'money' && !num(v));
       if (f.required && empty) {
-        toast(`فیلد «${f.label}» الزامی است`, 'error');
+        toast(`فیلد «${typeof f.label === 'function' ? f.label(values) : f.label}» الزامی است`, 'error');
         setInvalid(f.name);
         return;
       }
       if (f.type === 'date' && f.required && !norm(String(v ?? ''))) {
-        toast(`تاریخ «${f.label}» معتبر نیست`, 'error');
+        toast(`تاریخ «${typeof f.label === 'function' ? f.label(values) : f.label}» معتبر نیست`, 'error');
         setInvalid(f.name);
         return;
       }

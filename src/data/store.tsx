@@ -280,6 +280,18 @@ export const actions = {
     });
   },
 
+  /** تغییر موجودی انبار بر اساس نام کالا (مثبت = ورود، منفی = خروج) */
+  adjustStock(delta: Record<string, number>): void {
+    const entries = Object.entries(delta).filter(([, v]) => Math.abs(v) > 0.0001);
+    if (!entries.length) return;
+    const inventory = state.inventory.map((item) => {
+      const hit = entries.find(([name]) => name === String(item.name || '').trim());
+      if (!hit) return item;
+      return { ...item, qty: Math.max(0, num(item.qty) + hit[1]) };
+    });
+    commit({ ...state, inventory });
+  },
+
   setSettings(patch: Partial<Settings>): void {
     commit({ ...state, settings: { ...state.settings, ...patch } });
   },
@@ -480,6 +492,24 @@ export function nextCode(prefix: string, existing: string[]): string {
   return `${prefix}-${max + 1}`;
 }
 
+/** تغییر موجودی انبار ناشی از یک معامله (dir = 1 اعمال، -1 برگشت) */
+export function txStockDelta(tx: Transaction, dir: 1 | -1): Record<string, number> {
+  const out: Record<string, number> = {};
+  const sign =
+    tx.type === 'purchase' || tx.type === 'sale_return'
+      ? 1
+      : tx.type === 'sale' || tx.type === 'purchase_return'
+        ? -1
+        : 0;
+  if (!sign) return out;
+  (tx.items || []).forEach((i) => {
+    const name = String(i.name || '').trim();
+    if (!name) return;
+    out[name] = (out[name] || 0) + sign * dir * num(i.qty);
+  });
+  return out;
+}
+
 /** مبلغ کل یک معامله با احتساب تخفیف و هزینه جانبی */
 export function txTotal(items: TxItem[], discount = 0, extraCost = 0): number {
   const base = (items || []).reduce((a, i) => a + num(i.qty) * num(i.price), 0);
@@ -610,6 +640,12 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
   const exps = filterExpenses(s, filter);
   const totalExp = sum(exps, 'amount');
 
+  // معاملات در همان بازه فیلتر
+  let txs = s.transactions.slice();
+  if (filter.flockId) txs = txs.filter((t) => t.flockId === filter.flockId);
+  if (filter.from) txs = txs.filter((t) => J.jdn(t.date) >= J.jdn(filter.from!));
+  if (filter.to) txs = txs.filter((t) => J.jdn(t.date) <= J.jdn(filter.to!));
+
   const rows = s.partners.map((p) => {
     let shareExp = 0;
     let paidDirect = 0;
@@ -617,10 +653,26 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
       shareExp += num(expenseShares(s, e)[p.id]);
       if (e.paidBy === p.id) paidDirect += num(e.amount);
     });
+
+    // سهم شریک از خرید و فروش هر معامله
+    let shareBuy = 0;
+    let shareSell = 0;
+    txs.forEach((t) => {
+      const sh = (t.shares || []).find((x) => x.partnerId === p.id);
+      if (!sh) return;
+      const amt = num(sh.amount);
+      if (t.type === 'purchase') shareBuy += amt;
+      else if (t.type === 'purchase_return') shareBuy -= amt;
+      else if (t.type === 'sale') shareSell += amt;
+      else if (t.type === 'sale_return') shareSell -= amt;
+    });
+
     const capital = sum(
       s.contributions.filter((c) => c.partnerId === p.id),
       'amount',
     );
+    const shareTx = shareSell - shareBuy;
+
     return {
       id: p.id,
       name: p.name,
@@ -629,12 +681,16 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
       capital,
       paidDirect,
       shareExp,
-      balance: capital + paidDirect - shareExp,
+      shareBuy,
+      shareSell,
+      shareTx,
+      balance: capital + paidDirect - shareExp + shareTx,
     };
   });
 
   const surplus = rows.reduce((a, r) => a + r.balance, 0);
-  return { rows, totalExp, surplus };
+  const txNet = rows.reduce((a, r) => a + r.shareTx, 0);
+  return { rows, totalExp, surplus, txNet };
 }
 
 export function alerts(s: AppState): AlertItem[] {

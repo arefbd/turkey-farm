@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Chips, Empty, PageHead, Row, SectionHead, Stat } from '../components/ui';
-import { actions, num, personName, sumTransactions, useApp } from '../data/store';
+import { actions, num, personName, sumTransactions, txStockDelta, useApp } from '../data/store';
 import { PAY_MODE_LABEL, TX_TYPE_LABEL } from '../data/categories';
 import { format } from '../lib/jalali';
 import { download, n, short, toCsv } from '../lib/format';
@@ -138,7 +138,11 @@ export function Transactions() {
                             danger: true,
                             ok: 'حذف',
                           });
-                          if (ok) actions.remove('transactions', t.id);
+                          if (ok) {
+                            actions.adjustStock(txStockDelta(t, -1));
+                            actions.remove('transactions', t.id);
+                            ui.toast('سند حذف و موجودی انبار اصلاح شد');
+                          }
                         }}
                       >
                         <Icon name="trash" size={15} />

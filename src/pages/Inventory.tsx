@@ -1,14 +1,24 @@
 /** انبار دان، دارو و تجهیزات */
-import { useUI } from '../components/Modal';
+import { useState } from 'react';
+import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Empty, PageHead, SectionHead, Stat } from '../components/ui';
 import { actions, num, useApp } from '../data/store';
+import { TX_TYPE_LABEL } from '../data/categories';
+import { format } from '../lib/jalali';
 import { n, short } from '../lib/format';
 import { InventoryItemForm, InventoryMoveForm } from '../forms';
 
 export function Inventory() {
   const s = useApp();
   const ui = useUI();
+  const [traceId, setTraceId] = useState<string | null>(null);
+  const traceItem = traceId ? s.inventory.find((i) => i.id === traceId) : null;
+  const traceTx = traceItem
+    ? s.transactions
+        .filter((t) => (t.items || []).some((x) => x.name.trim() === traceItem.name.trim()))
+        .sort((a, b) => b.date.localeCompare(a.date))
+    : [];
 
   const items = s.inventory
     .slice()
@@ -113,6 +123,13 @@ export function Inventory() {
                           </button>
                           <button
                             className="icon-btn sm"
+                            title="گردش کالا"
+                            onClick={() => setTraceId(i.id)}
+                          >
+                            <Icon name="search" size={13} />
+                          </button>
+                          <button
+                            className="icon-btn sm"
                             onClick={() => ui.open(<InventoryItemForm id={i.id} onClose={ui.close} />)}
                           >
                             <Icon name="edit" size={13} />
@@ -141,6 +158,70 @@ export function Inventory() {
           <Empty title="انبار خالی است" text="اولین کالا را اضافه کنید" />
         )}
       </div>
+
+      {traceItem ? (
+        <Modal
+          title={`گردش کالا — ${traceItem.name}`}
+          onClose={() => setTraceId(null)}
+          footer={
+            <button className="btn primary" type="button" onClick={() => setTraceId(null)}>
+              بستن
+            </button>
+          }
+        >
+          <div className="kv">
+            <span>موجودی فعلی</span>
+            <b>
+              {n(traceItem.qty)} {traceItem.unit}
+            </b>
+          </div>
+          <div className="kv">
+            <span>کد کالا</span>
+            <b>{traceItem.code || '—'}</b>
+          </div>
+          <div className="sec-head" style={{ marginTop: 12 }}>
+            <div>
+              <h3>معاملات مرتبط</h3>
+              <span className="sec-sub">{n(traceTx.length)} سند</span>
+            </div>
+          </div>
+          {traceTx.length ? (
+            <div className="rows">
+              {traceTx.map((t) => {
+                const line = (t.items || []).find(
+                  (x) => x.name.trim() === traceItem.name.trim(),
+                );
+                return (
+                  <div className="row" key={t.id}>
+                    <span className="row-ic" style={{ background: '#F4EEFF', border: 0 }}>
+                      {t.type === 'purchase' ? '📦' : t.type === 'sale' ? '🍗' : '↩️'}
+                    </span>
+                    <div className="row-main">
+                      <div className="row-title">
+                        {TX_TYPE_LABEL[t.type] || t.type} · {t.personName || '—'}
+                      </div>
+                      <div className="row-sub">
+                        {t.code} · {format(t.date, 'long')}
+                      </div>
+                    </div>
+                    <div className="row-side">
+                      <div className="row-amt">
+                        {n(line?.qty || 0)} {line?.unit || traceItem.unit}
+                      </div>
+                      <div className="row-date">کیلویی {n(line?.price || 0)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="hint" style={{ padding: '8px 2px' }}>
+              برای این کالا معامله‌ای ثبت نشده است. با انتخاب نام کالا در فرم معامله، گردش آن اینجا
+              ثبت می‌شود.
+            </div>
+          )}
+        </Modal>
+      ) : null}
     </>
   );
 }

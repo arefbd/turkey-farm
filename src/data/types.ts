@@ -303,6 +303,12 @@ export interface SettlementRow {
   capital: number;
   paidDirect: number;
   shareExp: number;
+  /** سهم از بهای خرید معاملات */
+  shareBuy: number;
+  /** سهم از فروش معاملات */
+  shareSell: number;
+  /** خالص سهم از معاملات (فروش − خرید) */
+  shareTx: number;
   balance: number;
 }
 
@@ -310,6 +316,8 @@ export interface Settlement {
   rows: SettlementRow[];
   totalExp: number;
   surplus: number;
+  /** جمع خالص معاملات (فروش − خرید) */
+  txNet: number;
 }
 
 export interface Totals {
