@@ -235,6 +235,24 @@ export interface Deal extends Base {
   note: string;
 }
 
+/* ---------------------------- حرکات انبار ---------------------------- */
+export type StockMoveKind = 'in' | 'out';
+
+export interface StockMove extends Base {
+  date: string;
+  itemId: string;
+  itemName: string;
+  unit: string;
+  kind: StockMoveKind;
+  qty: number;
+  before: number;
+  after: number;
+  reason: string;
+  refType: 'manual' | 'transaction' | 'adjust';
+  refId: string;
+  note: string;
+}
+
 export interface AppState {
   version: number;
   settings: Settings;
@@ -253,6 +271,7 @@ export interface AppState {
   persons: Person[];
   transactions: Transaction[];
   payments: PaymentDoc[];
+  stockMoves: StockMove[];
 }
 
 export type CollectionKey =
@@ -270,7 +289,8 @@ export type CollectionKey =
   | 'deals'
   | 'persons'
   | 'transactions'
-  | 'payments';
+  | 'payments'
+  | 'stockMoves';
 
 export interface FlockStats {
   flock: Flock;

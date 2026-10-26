@@ -139,7 +139,12 @@ export function Transactions() {
                             ok: 'حذف',
                           });
                           if (ok) {
-                            actions.adjustStock(txStockDelta(t, -1));
+                            actions.adjustStock(txStockDelta(t, -1), {
+                              date: t.date,
+                              reason: 'حذف سند',
+                              refType: 'transaction',
+                              refId: t.code,
+                            });
                             actions.remove('transactions', t.id);
                             ui.toast('سند حذف و موجودی انبار اصلاح شد');
                           }

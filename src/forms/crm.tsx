@@ -23,6 +23,7 @@ import {
   WAREHOUSES,
 } from '../data/categories';
 import { today } from '../lib/jalali';
+import { splitAmount } from '../lib/money';
 import { money, n } from '../lib/format';
 import type { PaymentDoc, Person, Transaction, TxItem, TxShare } from '../data/types';
 
@@ -153,10 +154,15 @@ export function TransactionForm({
       .map((r) => ({ name: r.name.trim(), unit: r.unit, qty: num(r.qty), price: num(r.price) }));
 
     const finalTotal = txTotal(items, discount, extraCost);
-    const txShares: TxShare[] = s.partners.map((p) => ({
+    // تخصیص دقیق: جمع سهم‌ها همیشه برابر مبلغ کل است
+    const amounts = splitAmount(
+      finalTotal,
+      s.partners.map((p) => num(shares[p.id])),
+    );
+    const txShares: TxShare[] = s.partners.map((p, i) => ({
       partnerId: p.id,
       percent: num(shares[p.id]),
-      amount: Math.round((finalTotal * num(shares[p.id])) / 100),
+      amount: amounts[i] || 0,
     }));
 
     const data = {
@@ -187,10 +193,20 @@ export function TransactionForm({
       Object.entries(fwd).forEach(([k, v]) => {
         merged[k] = (merged[k] || 0) + v;
       });
-      actions.adjustStock(merged);
+      actions.adjustStock(merged, {
+        date,
+        reason: TX_TYPE_LABEL[type] || 'معامله',
+        refType: 'transaction',
+        refId: code,
+      });
       actions.update('transactions', editing.id, data as Partial<Transaction>);
     } else {
-      actions.adjustStock(txStockDelta(data as unknown as Transaction, 1));
+      actions.adjustStock(txStockDelta(data as unknown as Transaction, 1), {
+        date,
+        reason: TX_TYPE_LABEL[type] || 'معامله',
+        refType: 'transaction',
+        refId: code,
+      });
       actions.add('transactions', data as Transaction);
     }
     toast(editing ? 'معامله ویرایش شد' : 'معامله ثبت شد');
@@ -240,6 +256,7 @@ export function TransactionForm({
           <label className="lbl">نوع سند</label>
           <select
             className="input"
+            id="fld-type"
             value={type}
             onChange={(e) => setType(e.target.value)}
           >
@@ -255,6 +272,7 @@ export function TransactionForm({
           <label className="lbl">طرف حساب (از اشخاص)</label>
           <select
             className="input"
+            id="fld-personId"
             value={personId}
             onChange={(e) => {
               setPersonId(e.target.value);
@@ -282,7 +300,12 @@ export function TransactionForm({
 
         <div className="field third">
           <label className="lbl">نوع پرداخت</label>
-          <select className="input" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+          <select
+            className="input"
+            id="fld-payMode"
+            value={payMode}
+            onChange={(e) => setPayMode(e.target.value)}
+          >
             {PAY_MODES.map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
@@ -310,7 +333,12 @@ export function TransactionForm({
         </div>
         <div className="field third">
           <label className="lbl">دوره پرورش (گله)</label>
-          <select className="input" value={flockId} onChange={(e) => setFlockId(e.target.value)}>
+          <select
+            className="input"
+            id="fld-flockId"
+            value={flockId}
+            onChange={(e) => setFlockId(e.target.value)}
+          >
             <option value="">عمومی مزرعه</option>
             {s.flocks.map((f) => (
               <option key={f.id} value={f.id}>
@@ -490,7 +518,14 @@ export function TransactionForm({
                 setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
               }
             />
-            <div className="hint">{money(Math.round((total * num(shares[p.id])) / 100))}</div>
+            <div className="hint">
+              {money(
+                splitAmount(
+                  total,
+                  s.partners.map((x) => num(shares[x.id])),
+                )[s.partners.indexOf(p)] || 0,
+              )}
+            </div>
           </div>
         ))}
       </div>

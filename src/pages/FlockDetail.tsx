@@ -108,6 +108,13 @@ export function FlockDetail({ id }: { id: string }) {
         />
         <Stat icon="🔄" label="ضریب تبدیل FCR" value={n(st.fcr, 2)} sub={`دان ${n(st.feedKg)} کیلو`} />
         <Stat
+          icon="🍗"
+          label="فروش رفته"
+          value={n(st.sold)}
+          unit="قطعه"
+          sub={`از ${n(f.startCount)} قطعه اولیه`}
+        />
+        <Stat
           icon="💰"
           label="هزینه هر کیلو"
           value={short(st.costPerKg)}
@@ -377,6 +384,14 @@ export function FlockDetail({ id }: { id: string }) {
           <div className="kv">
             <span>تلفات + حذفی</span>
             <b>{n(st.mortality + st.culled)} قطعه</b>
+          </div>
+          <div className="kv">
+            <span>فروش رفته (از معاملات)</span>
+            <b style={{ color: st.sold > 0 ? '#6D28D9' : undefined }}>{n(st.sold)} قطعه</b>
+          </div>
+          <div className="kv">
+            <span>موجودی زنده فعلی</span>
+            <b>{n(st.alive)} قطعه</b>
           </div>
           <div className="kv">
             <span>مصرف دان کل</span>

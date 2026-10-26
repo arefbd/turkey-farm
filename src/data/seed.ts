@@ -56,6 +56,7 @@ export function blank(): AppState {
     persons: [],
     transactions: [],
     payments: [],
+    stockMoves: [],
   };
 }
 

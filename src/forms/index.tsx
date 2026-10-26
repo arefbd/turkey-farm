@@ -8,6 +8,7 @@ import {
   CHICK_AGE_DEFAULT,
   CHICK_TYPES,
   CATEGORIES,
+  STOCK_REASONS,
   CAT_MAP,
   INVENTORY_CATS,
   INVENTORY_CAT_TO_EXPENSE,
@@ -840,6 +841,14 @@ export function InventoryMoveForm({
       hint: 'در صورت ورود، به عنوان هزینه ثبت می‌شود',
     },
     {
+      name: 'reason',
+      label: 'دلیل حرکت',
+      type: 'select',
+      required: true,
+      col: 'half',
+      options: STOCK_REASONS,
+    },
+    {
       name: 'flockId',
       label: 'گله',
       type: 'select',
@@ -862,6 +871,7 @@ export function InventoryMoveForm({
         date: today(),
         qty: 0,
         cost: 0,
+        reason: STOCK_REASONS[0],
         flockId: '',
         note: '',
       }}
@@ -874,9 +884,15 @@ export function InventoryMoveForm({
           toast(`موجودی کافی نیست (موجودی: ${n(item.qty)})`, 'error');
           return false;
         }
-        actions.update('inventory', item.id, {
-          qty: num(item.qty) + (v.kind === 'in' ? q : -q),
-        });
+        actions.adjustStock(
+          { [String(item.name).trim()]: v.kind === 'in' ? q : -q },
+          {
+            date: String(v.date),
+            reason: String(v.reason || 'سایر'),
+            refType: 'manual',
+            note: String(v.note ?? ''),
+          },
+        );
         if (v.kind === 'in' && num(v.cost) > 0) {
           actions.add('expenses', {
             date: String(v.date),

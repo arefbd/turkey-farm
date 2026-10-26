@@ -98,6 +98,9 @@ export function Flocks() {
                       <span>
                         سن: <b>{n(st.age)} روز</b>
                       </span>
+                      <span>
+                        فروش رفته: <b>{n(st.sold)} قطعه</b>
+                      </span>
                     </div>
                   </div>
                   <button className="icon-btn sm" onClick={() => openMenu(f.id)}>

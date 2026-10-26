@@ -34,6 +34,7 @@ import type {
   Formula,
   Person,
   Settlement,
+  StockMove,
   Settings,
   Totals,
   Transaction,
@@ -65,6 +66,7 @@ function normalize(s: AppState): AppState {
     'contributions',
     'transactions',
     'payments',
+    'stockMoves',
   ];
   const next = { ...s };
   for (const col of cols) {
@@ -92,6 +94,7 @@ function normalize(s: AppState): AppState {
   next.persons = next.persons || [];
   next.transactions = next.transactions || [];
   next.payments = next.payments || [];
+  next.stockMoves = next.stockMoves || [];
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
 }
@@ -280,16 +283,51 @@ export const actions = {
     });
   },
 
-  /** تغییر موجودی انبار بر اساس نام کالا (مثبت = ورود، منفی = خروج) */
-  adjustStock(delta: Record<string, number>): void {
+  /**
+   * تغییر موجودی انبار بر اساس نام کالا (مثبت = ورود، منفی = خروج)
+   * هر تغییر یک سطر در دفتر حرکات انبار (کاردکس) ثبت می‌کند.
+   */
+  adjustStock(
+    delta: Record<string, number>,
+    meta?: {
+      date?: string;
+      reason?: string;
+      refType?: 'manual' | 'transaction' | 'adjust';
+      refId?: string;
+      note?: string;
+    },
+  ): void {
     const entries = Object.entries(delta).filter(([, v]) => Math.abs(v) > 0.0001);
     if (!entries.length) return;
+
+    const moves: StockMove[] = [];
     const inventory = state.inventory.map((item) => {
       const hit = entries.find(([name]) => name === String(item.name || '').trim());
       if (!hit) return item;
-      return { ...item, qty: Math.max(0, num(item.qty) + hit[1]) };
+      const before = num(item.qty);
+      const after = Math.max(0, before + hit[1]);
+      if (after === before) return item;
+      moves.push({
+        id: uid(),
+        createdAt: Date.now(),
+        date: meta?.date || J.today(),
+        itemId: item.id,
+        itemName: item.name,
+        unit: item.unit,
+        kind: hit[1] >= 0 ? 'in' : 'out',
+        qty: Math.abs(hit[1]),
+        before,
+        after,
+        reason: meta?.reason || 'اصلاح شمارش',
+        refType: meta?.refType || 'manual',
+        refId: meta?.refId || '',
+        note: meta?.note || '',
+      });
+      return { ...item, qty: after };
     });
-    commit({ ...state, inventory });
+
+    if (!moves.length) return;
+    commit({ ...state, inventory, stockMoves: [...moves, ...state.stockMoves] });
   },
 
   setSettings(patch: Partial<Settings>): void {
@@ -465,6 +503,13 @@ export function soldCountForFlock(s: AppState, flockId: string): number {
     else if (t.type === 'sale_return') n -= qty;
   });
   return Math.max(0, Math.round(n));
+}
+
+/** حرکات یک کالا، جدیدترین اول */
+export function stockMovesFor(s: AppState, itemId: string): StockMove[] {
+  return s.stockMoves
+    .filter((m) => m.itemId === itemId)
+    .sort((a, b) => J.jdn(b.date) - J.jdn(a.date) || (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 export function personById(s: AppState, id: string) {
