@@ -11,7 +11,6 @@ import { Dashboard } from './pages/Dashboard';
 import { Flocks } from './pages/Flocks';
 import { FlockDetail } from './pages/FlockDetail';
 import { Expenses } from './pages/Expenses';
-import { Sales } from './pages/Sales';
 import { Transactions } from './pages/Transactions';
 import { Payments } from './pages/Payments';
 import { Persons } from './pages/Persons';
@@ -81,7 +80,8 @@ function Page({ name, param }: { name: string; param: string }) {
     case 'expenses':
       return <Expenses />;
     case 'sales':
-      return <Sales />;
+      // مسیر قدیمی — به معاملات هدایت می‌شود
+      return <Transactions />;
     case 'transactions':
       return <Transactions />;
     case 'payments':

@@ -343,7 +343,7 @@ export function seed(): AppState {
   ];
   s.tasks = tasks;
 
-  const inventory: Array<Omit<InventoryItem, 'code' | 'active' | 'note'>> = [
+  const inventory: Array<Omit<InventoryItem, 'code' | 'active' | 'note' | 'expiry'>> = [
     { id: 'i1', name: 'دان پیش‌دان', unit: 'کیلوگرم', qty: 3200, min: 2000, pricePerKg: 34000, cat: 'خوراک' },
     { id: 'i2', name: 'دان پس‌دان', unit: 'کیلوگرم', qty: 8400, min: 5000, pricePerKg: 30500, cat: 'خوراک' },
     { id: 'i3', name: 'ذرت', unit: 'کیلوگرم', qty: 2600, min: 3000, pricePerKg: 21000, cat: 'مواد اولیه' },
@@ -357,6 +357,7 @@ export function seed(): AppState {
     code: 'K-' + (1001 + idx),
     active: true,
     note: '',
+    expiry: '',
   }));
 
   const contributions: Contribution[] = [

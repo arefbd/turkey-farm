@@ -10,7 +10,7 @@ import { useSyncExternalStore } from 'react';
 import * as J from '../lib/jalali';
 import { setFaDigits } from '../lib/jalali';
 import { blank, seed, uid } from './seed';
-import { CAT_MAP } from './categories';
+import { CAT_MAP, GOODS_CATS } from './categories';
 import {
   COLLECTIONS,
   assemble,
@@ -90,7 +90,10 @@ function normalize(s: AppState): AppState {
     code: i.code || '',
     active: i.active !== false,
     note: i.note || '',
+    expiry: i.expiry || '',
   }));
+  next.transactions = (next.transactions || []).map((t) => ({ ...t, locked: !!t.locked }));
+  next.payments = (next.payments || []).map((p) => ({ ...p, locked: !!p.locked }));
   next.persons = next.persons || [];
   next.transactions = next.transactions || [];
   next.payments = next.payments || [];
@@ -691,6 +694,14 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
   if (filter.from) txs = txs.filter((t) => J.jdn(t.date) >= J.jdn(filter.from!));
   if (filter.to) txs = txs.filter((t) => J.jdn(t.date) <= J.jdn(filter.to!));
 
+  const payments = s.payments.filter((p) => {
+    if (filter.from && J.jdn(p.date) < J.jdn(filter.from)) return false;
+    if (filter.to && J.jdn(p.date) > J.jdn(filter.to)) return false;
+    return true;
+  });
+  const cashIn = payments.filter((p) => p.kind === 'in').reduce((a, p) => a + num(p.amount), 0);
+  const cashOut = payments.filter((p) => p.kind === 'out').reduce((a, p) => a + num(p.amount), 0);
+
   const rows = s.partners.map((p) => {
     let shareExp = 0;
     let paidDirect = 0;
@@ -718,6 +729,16 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
     );
     const shareTx = shareSell - shareBuy;
 
+    // اثر اسناد دریافت/پرداخت: پولی که شریک از جیب داده یا به دست گرفته
+    let paidOut = 0;
+    let received = 0;
+    payments.forEach((pay) => {
+      if (pay.kind === 'out' && pay.payerId === p.id) paidOut += num(pay.amount);
+      if (pay.kind === 'in' && pay.accountType === 'partner' && pay.partnerId === p.id) {
+        received += num(pay.amount);
+      }
+    });
+
     return {
       id: p.id,
       name: p.name,
@@ -729,13 +750,15 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
       shareBuy,
       shareSell,
       shareTx,
-      balance: capital + paidDirect - shareExp + shareTx,
+      paidOut,
+      received,
+      balance: capital + paidDirect + paidOut - received - shareExp + shareTx,
     };
   });
 
   const surplus = rows.reduce((a, r) => a + r.balance, 0);
   const txNet = rows.reduce((a, r) => a + r.shareTx, 0);
-  return { rows, totalExp, surplus, txNet };
+  return { rows, totalExp, surplus, txNet, cashIn, cashOut, cashBalance: cashIn - cashOut };
 }
 
 export function alerts(s: AppState): AlertItem[] {
@@ -798,6 +821,36 @@ export function alerts(s: AppState): AlertItem[] {
         text: 'موعد: ' + J.format(t.date, 'long'),
       });
     });
+
+  s.inventory.forEach((i) => {
+    if (!i.expiry || i.active === false) return;
+    const left = J.diff(J.today(), i.expiry);
+    if (left < 0) {
+      out.push({
+        level: 'danger',
+        icon: '⏳',
+        title: `${i.name} منقضی شده است`,
+        text: `تاریخ انقضا: ${J.format(i.expiry, 'long')}`,
+      });
+    } else if (left <= 30) {
+      out.push({
+        level: 'warn',
+        icon: '⏳',
+        title: `${i.name} نزدیک انقضا`,
+        text: `${left} روز تا انقضا — ${J.format(i.expiry, 'long')}`,
+      });
+    }
+  });
+
+  const goodsExpenses = s.expenses.filter((e) => GOODS_CATS.includes(e.category));
+  if (goodsExpenses.length && s.transactions.some((t) => t.type === 'purchase')) {
+    out.push({
+      level: 'warn',
+      icon: '⚖️',
+      title: 'احتمال دوباره‌شماری خرید',
+      text: `${goodsExpenses.length} هزینه از دسته‌های کالایی (دان، جوجه، گوشت، واکسن) ثبت شده — اگر همان خرید در «معاملات» هم هست، سود دو بار کم می‌شود.`,
+    });
+  }
 
   settlement(s).rows.forEach((r) => {
     if (r.balance < -1000000) {

@@ -302,6 +302,35 @@ export function Partners() {
       </div>
 
       <div className="card mt">
+        <SectionHead title="تطبیق نقدی" sub="بر اساس اسناد دریافت و پرداخت" />
+        <div className="grid grid-3" style={{ gap: 10 }}>
+          <div className="kv" style={{ display: 'block' }}>
+            <span>جمع دریافت‌ها</span>
+            <br />
+            <b style={{ color: '#059669' }}>{short(settle.cashIn)}</b>
+          </div>
+          <div className="kv" style={{ display: 'block' }}>
+            <span>جمع پرداخت‌ها</span>
+            <br />
+            <b style={{ color: '#DC2626' }}>{short(settle.cashOut)}</b>
+          </div>
+          <div className="kv" style={{ display: 'block' }}>
+            <span>موجودی نقدی صندوق</span>
+            <br />
+            <b style={{ color: settle.cashBalance >= 0 ? '#059669' : '#DC2626' }}>
+              {short(settle.cashBalance)}
+            </b>
+          </div>
+        </div>
+        <div className="hint" style={{ marginTop: 8, lineHeight: 1.9 }}>
+          جمع مانده شرکا ({short(settle.surplus)}) با موجودی نقدی ({short(settle.cashBalance)})
+          برابر نیست و نباید باشد: تفاوت آن، ارزش موجودی انبار و مطالبات/بدهی‌های نسیه است.
+          پرداخت‌هایی که شریک از جیب خود انجام داده و دریافت‌هایی که خودش به دست گرفته، در مانده
+          حسابش لحاظ شده است.
+        </div>
+      </div>
+
+      <div className="card mt">
         <SectionHead title="پیشنهاد تسویه نهایی" sub="برای برابر شدن مانده حساب شرکا" />
         {transfers.length ? (
           transfers.map((t, i) => (

@@ -30,7 +30,7 @@ export interface FieldDef {
   col?: 'half' | 'third' | 'full';
   required?: boolean;
   placeholder?: string;
-  hint?: ReactNode;
+  hint?: ReactNode | ((values: FormValues) => ReactNode);
   step?: string;
   options?: Array<string | Option> | ((values: FormValues) => Array<string | Option>);
   visible?: (values: FormValues) => boolean;
@@ -156,7 +156,8 @@ export function Field({
       {def.required ? <span className="req"> *</span> : null}
     </label>
   );
-  const hint = def.hint ? <div className="hint">{def.hint}</div> : null;
+  const hintNode = typeof def.hint === 'function' ? def.hint(values) : def.hint;
+  const hint = hintNode ? <div className="hint">{hintNode}</div> : null;
 
   if (def.type === 'checkbox') {
     return (

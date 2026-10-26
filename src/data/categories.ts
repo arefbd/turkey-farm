@@ -68,6 +68,9 @@ export const INVENTORY_CAT_TO_EXPENSE: Record<string, string> = {
 
 export const TASK_TYPES = ['عمومی', 'واکسن', 'توزین', 'خرید', 'مالی', 'بازدید'];
 
+/** دسته‌هایی که «خرید کالا» هستند و در معاملات هم قابل ثبت‌اند */
+export const GOODS_CATS = ['chick1', 'chick15', 'fatten', 'meat', 'feed', 'mix', 'vaccine'];
+
 /* ----------------------------- انواع جوجه ----------------------------- */
 export const CHICK_TYPES = ['یک روزه', 'چند روزه', 'نیمچه', 'پروار'];
 

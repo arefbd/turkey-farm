@@ -124,16 +124,44 @@ export function Transactions() {
                       <span className={'badge ' + (TYPE_TONE[t.type] || 'gray')}>
                         {TX_TYPE_LABEL[t.type]}
                       </span>
+                      {t.locked ? (
+                        <span className="badge gray" style={{ marginTop: 3 }}>
+                          قفل
+                        </span>
+                      ) : null}
                     </div>
                   }
                   actions={
                     <>
-                      <button className="icon-btn sm" onClick={() => openForm(t.id)}>
+                      <button
+                        className="icon-btn sm"
+                        title={t.locked ? 'باز کردن قفل' : 'قفل کردن سند'}
+                        onClick={() => {
+                          actions.update('transactions', t.id, { locked: !t.locked });
+                          ui.toast(t.locked ? 'قفل سند باز شد' : 'سند قفل شد');
+                        }}
+                      >
+                        <Icon name={t.locked ? 'check' : 'filter'} size={14} />
+                      </button>
+                      <button
+                        className="icon-btn sm"
+                        onClick={() => {
+                          if (t.locked) {
+                            ui.toast('سند قفل است؛ ابتدا قفل را باز کنید', 'error');
+                            return;
+                          }
+                          openForm(t.id);
+                        }}
+                      >
                         <Icon name="edit" size={15} />
                       </button>
                       <button
                         className="icon-btn sm"
                         onClick={async () => {
+                          if (t.locked) {
+                            ui.toast('سند قفل است؛ ابتدا قفل را باز کنید', 'error');
+                            return;
+                          }
                           const ok = await ui.confirm('این سند معامله حذف شود؟', {
                             danger: true,
                             ok: 'حذف',

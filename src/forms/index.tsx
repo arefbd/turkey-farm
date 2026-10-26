@@ -8,6 +8,7 @@ import {
   CHICK_AGE_DEFAULT,
   CHICK_TYPES,
   CATEGORIES,
+  GOODS_CATS,
   STOCK_REASONS,
   CAT_MAP,
   INVENTORY_CATS,
@@ -85,6 +86,10 @@ export function ExpenseForm({
       required: true,
       col: 'half',
       options: CATEGORIES.map((c) => ({ value: c.id, label: `${c.icon}  ${c.label}` })),
+      hint: (v) =>
+        GOODS_CATS.includes(String(v.category))
+          ? 'توجه: خرید کالا بهتر است در «معاملات» ثبت شود؛ ثبت در هر دو جا سود را دو بار کم می‌کند.'
+          : undefined,
     },
     {
       name: 'sub',
@@ -705,6 +710,7 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
         pricePerKg: 0,
         active: true,
         note: '',
+        expiry: '',
       };
 
   const cats = Array.from(new Set([...INVENTORY_CATS, ...(s.settings.itemCats || [])]));
@@ -719,6 +725,13 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
     { name: 'qty', label: 'موجودی فعلی', type: 'number', col: 'third' },
     { name: 'min', label: 'حد هشدار', type: 'number', col: 'third' },
     { name: 'pricePerKg', label: 'قیمت واحد (تومان)', type: 'money', col: 'third' },
+    {
+      name: 'expiry',
+      label: 'تاریخ انقضا',
+      type: 'date',
+      col: 'half',
+      hint: 'برای دارو و واکسن — اختیاری',
+    },
     { name: 'note', label: 'توضیحات', type: 'textarea', col: 'full' },
   ];
 

@@ -88,20 +88,44 @@ export function Payments() {
                   iconBg={p.kind === 'in' ? '#ECFDF5' : '#FEF2F2'}
                   title={`${p.kind === 'in' ? 'دریافت از' : 'پرداخت به'} ${who}`}
                   sub={
-                    `${p.code} · ${format(p.date, 'long')} · ${accountLabel(p)} · ${
-                      PAYMENT_METHOD_LABEL[p.method] || ''
-                    }` + (tx ? ` · معامله ${tx.code} (${TX_TYPE_LABEL[tx.type]})` : '')
+                    `${p.code}${p.locked ? ' 🔒' : ''} · ${format(p.date, 'long')} · ${accountLabel(
+                      p,
+                    )} · ${PAYMENT_METHOD_LABEL[p.method] || ''}` +
+                    (tx ? ` · معامله ${tx.code} (${TX_TYPE_LABEL[tx.type]})` : '')
                   }
                   amount={(p.kind === 'in' ? '+' : '−') + n(p.amount)}
                   amountTone={p.kind === 'in' ? 'pos' : 'neg'}
                   actions={
                     <>
-                      <button className="icon-btn sm" onClick={() => openForm(p.id)}>
+                      <button
+                        className="icon-btn sm"
+                        title={p.locked ? 'باز کردن قفل' : 'قفل کردن سند'}
+                        onClick={() => {
+                          actions.update('payments', p.id, { locked: !p.locked });
+                          ui.toast(p.locked ? 'قفل سند باز شد' : 'سند قفل شد');
+                        }}
+                      >
+                        <Icon name={p.locked ? 'check' : 'filter'} size={14} />
+                      </button>
+                      <button
+                        className="icon-btn sm"
+                        onClick={() => {
+                          if (p.locked) {
+                            ui.toast('سند قفل است؛ ابتدا قفل را باز کنید', 'error');
+                            return;
+                          }
+                          openForm(p.id);
+                        }}
+                      >
                         <Icon name="edit" size={15} />
                       </button>
                       <button
                         className="icon-btn sm"
                         onClick={async () => {
+                          if (p.locked) {
+                            ui.toast('سند قفل است؛ ابتدا قفل را باز کنید', 'error');
+                            return;
+                          }
                           const ok = await ui.confirm('این سند حذف شود؟', {
                             danger: true,
                             ok: 'حذف',

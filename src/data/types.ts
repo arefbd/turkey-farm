@@ -71,6 +71,8 @@ export interface Transaction extends Base {
   total: number;
   shares: TxShare[];
   note: string;
+  /** سند قفل‌شده قابل ویرایش یا حذف نیست */
+  locked: boolean;
 }
 
 /* --------------------------- دریافت و پرداخت --------------------------- */
@@ -94,6 +96,7 @@ export interface PaymentDoc extends Base {
   method: PaymentMethod;
   transactionId: string;
   note: string;
+  locked: boolean;
 }
 
 export interface Partner extends Base {
@@ -221,6 +224,8 @@ export interface InventoryItem extends Base {
   cat: string;
   active: boolean;
   note: string;
+  /** تاریخ انقضا (شمسی) — برای دارو و واکسن */
+  expiry: string;
 }
 
 export interface Deal extends Base {
@@ -329,6 +334,10 @@ export interface SettlementRow {
   shareSell: number;
   /** خالص سهم از معاملات (فروش − خرید) */
   shareTx: number;
+  /** پرداخت‌هایی که این شریک از جیب خود انجام داده */
+  paidOut: number;
+  /** دریافت‌هایی که این شریک به دست گرفته (نه صندوق) */
+  received: number;
   balance: number;
 }
 
@@ -338,6 +347,12 @@ export interface Settlement {
   surplus: number;
   /** جمع خالص معاملات (فروش − خرید) */
   txNet: number;
+  /** جمع دریافت‌های نقدی */
+  cashIn: number;
+  /** جمع پرداخت‌های نقدی */
+  cashOut: number;
+  /** موجودی نقدی صندوق بر اساس اسناد دریافت/پرداخت */
+  cashBalance: number;
 }
 
 export interface Totals {

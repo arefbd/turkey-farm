@@ -405,6 +405,15 @@ export function FlockDetail({ id }: { id: string }) {
             <span>وزن زنده کل</span>
             <b>{n(st.biomass, 0)} کیلو</b>
           </div>
+          <div className="kv">
+            <span>ارزش تقریبی تلفات</span>
+            <b style={{ color: '#DC2626' }}>
+              {money(
+                Math.round((st.expenses / Math.max(1, num(f.startCount))) * st.mortality),
+                s.settings.currency,
+              )}
+            </b>
+          </div>
         </div>
       </div>
     </>
