@@ -106,7 +106,7 @@ export function Dashboard() {
           label="هزینه کل"
           value={short(t.expenses)}
           unit="تومان"
-          sub={`${n(t.count)} رکورد هزینه`}
+          sub={`${n(t.count)} رکورد · خرید ${short(t.purchase)}`}
         />
         <Stat
           icon="🍗"

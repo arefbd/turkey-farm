@@ -1,0 +1,593 @@
+/** فرم‌های اشخاص (CRM)، معاملات و دریافت/پرداخت */
+import { useMemo, useState } from 'react';
+import { FormModal, Field, type FieldDef, type FormValues } from '../components/Form';
+import { Modal, useUI } from '../components/Modal';
+import { Icon } from '../components/Icon';
+import {
+  actions,
+  nextCode,
+  num,
+  personById,
+  personLabel,
+  txTotal,
+  useApp,
+} from '../data/store';
+import {
+  PAY_MODES,
+  PAYMENT_METHODS,
+  PERSON_TYPES,
+  TX_TYPES,
+  TX_TYPE_LABEL,
+  UNITS,
+  WAREHOUSES,
+} from '../data/categories';
+import { today } from '../lib/jalali';
+import { money, n } from '../lib/format';
+import type { PaymentDoc, Person, Transaction, TxItem, TxShare } from '../data/types';
+
+/* --------------------------------- اشخاص -------------------------------- */
+export function PersonForm({ id, onClose }: { id?: string; onClose: () => void }) {
+  const s = useApp();
+  const { toast } = useUI();
+  const editing = id ? s.persons.find((p) => p.id === id) : null;
+
+  const initial: FormValues = editing
+    ? { ...editing }
+    : {
+        code: nextCode('P', s.persons.map((p) => p.code)),
+        firstName: '',
+        lastName: '',
+        company: '',
+        type: 'customer',
+        nationalId: '',
+        phone: '',
+        address: '',
+        note: '',
+      };
+
+  const fields: FieldDef[] = [
+    { name: 'code', label: 'کد شخص', type: 'text', col: 'third', hint: 'خودکار ساخته می‌شود' },
+    {
+      name: 'type',
+      label: 'نوع شخص',
+      type: 'select',
+      required: true,
+      col: 'third',
+      options: PERSON_TYPES,
+    },
+    { name: 'phone', label: 'شماره تماس', type: 'text', col: 'third' },
+    { name: 'firstName', label: 'نام', type: 'text', col: 'half' },
+    { name: 'lastName', label: 'نام خانوادگی', type: 'text', col: 'half' },
+    {
+      name: 'company',
+      label: 'نام شرکت (اختیاری)',
+      type: 'text',
+      col: 'full',
+      placeholder: 'اگر شخص حقوقی است، نام شرکت را وارد کنید',
+    },
+    { name: 'nationalId', label: 'کد ملی / شناسه ملی', type: 'text', col: 'half' },
+    { name: 'address', label: 'آدرس', type: 'text', col: 'half' },
+    { name: 'note', label: 'توضیحات', type: 'textarea', col: 'full' },
+  ];
+
+  return (
+    <FormModal
+      title={editing ? 'ویرایش شخص' : 'شخص جدید'}
+      fields={fields}
+      initial={initial}
+      onClose={onClose}
+      onSubmit={(v) => {
+        const data: FormValues = { ...v, code: String(v.code || nextCode('P', s.persons.map((p) => p.code))) };
+        if (editing) actions.update('persons', editing.id, data as Partial<Person>);
+        else actions.add('persons', data as unknown as Person);
+        toast('شخص ذخیره شد');
+      }}
+    />
+  );
+}
+
+/* -------------------------------- معامله -------------------------------- */
+interface TxRow extends TxItem {
+  key: number;
+}
+
+export function TransactionForm({
+  id,
+  presetType,
+  onClose,
+}: {
+  id?: string;
+  presetType?: string;
+  onClose: () => void;
+}) {
+  const s = useApp();
+  const { toast } = useUI();
+  const editing = id ? s.transactions.find((t) => t.id === id) : null;
+
+  const units = useMemo(() => Array.from(new Set([...UNITS, ...(s.settings.units || [])])), [s.settings.units]);
+
+  const [code, setCode] = useState(
+    editing?.code || nextCode('T', s.transactions.map((t) => t.code)),
+  );
+  const [date, setDate] = useState(editing?.date || today());
+  const [type, setType] = useState(editing?.type || presetType || 'sale');
+  const [personId, setPersonId] = useState(editing?.personId || '');
+  const [personName, setPersonName] = useState(editing?.personName || '');
+  const [payMode, setPayMode] = useState<string>(editing?.payMode || 'cash');
+  const [dueDate, setDueDate] = useState(editing?.dueDate || '');
+  const [deposit, setDeposit] = useState(num(editing?.deposit));
+  const [hall, setHall] = useState(editing?.hall || '');
+  const [flockId, setFlockId] = useState(editing?.flockId || '');
+  const [warehouse, setWarehouse] = useState(editing?.warehouse || WAREHOUSES[0]);
+  const [note, setNote] = useState(editing?.note || '');
+  const [discount, setDiscount] = useState(num(editing?.discount));
+  const [extraCost, setExtraCost] = useState(num(editing?.extraCost));
+  const [rows, setRows] = useState<TxRow[]>(() =>
+    (editing?.items?.length ? editing.items : [{ name: '', unit: units[0], qty: 1, price: 0 }]).map(
+      (i, k) => ({ ...i, key: k }),
+    ),
+  );
+  const [shares, setShares] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {};
+    s.partners.forEach((p) => {
+      const found = editing?.shares?.find((x) => x.partnerId === p.id);
+      init[p.id] = found ? found.percent : num(p.share);
+    });
+    return init;
+  });
+
+  const total = txTotal(rows, discount, extraCost);
+  const shareSum = s.partners.reduce((a, p) => a + num(shares[p.id]), 0);
+
+  const setRow = (key: number, patch: Partial<TxRow>) =>
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+
+  const save = () => {
+    if (!rows.some((r) => r.name.trim() && num(r.qty) > 0)) {
+      toast('حداقل یک قلم کالا با تعداد لازم است', 'error');
+      return;
+    }
+    const items: TxItem[] = rows
+      .filter((r) => r.name.trim())
+      .map((r) => ({ name: r.name.trim(), unit: r.unit, qty: num(r.qty), price: num(r.price) }));
+
+    const finalTotal = txTotal(items, discount, extraCost);
+    const txShares: TxShare[] = s.partners.map((p) => ({
+      partnerId: p.id,
+      percent: num(shares[p.id]),
+      amount: Math.round((finalTotal * num(shares[p.id])) / 100),
+    }));
+
+    const data = {
+      code,
+      date,
+      type,
+      personId,
+      personName: personName || personLabel(personById(s, personId)),
+      payMode,
+      dueDate: payMode === 'cash' ? '' : dueDate,
+      deposit: payMode === 'mixed' ? num(deposit) : payMode === 'cash' ? finalTotal : 0,
+      hall,
+      flockId,
+      warehouse,
+      items,
+      discount: num(discount),
+      extraCost: num(extraCost),
+      total: finalTotal,
+      shares: txShares,
+      note,
+    };
+
+    if (editing) actions.update('transactions', editing.id, data as Partial<Transaction>);
+    else actions.add('transactions', data as Transaction);
+    toast(editing ? 'معامله ویرایش شد' : 'معامله ثبت شد');
+    onClose();
+  };
+
+  const numInput = (
+    value: number,
+    onChange: (v: number) => void,
+    placeholder = '۰',
+  ) => (
+    <input
+      className="input num"
+      inputMode="numeric"
+      value={value ? String(value) : ''}
+      placeholder={placeholder}
+      onChange={(e) => onChange(num(e.target.value))}
+    />
+  );
+
+  return (
+    <Modal
+      title={editing ? `ویرایش معامله ${code}` : 'معامله جدید'}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            انصراف
+          </button>
+          <button className="btn primary" type="button" onClick={save}>
+            {editing ? 'ذخیره تغییرات' : 'ثبت معامله'}
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <div className="field third">
+          <label className="lbl">کد سند</label>
+          <input className="input num" value={code} onChange={(e) => setCode(e.target.value)} />
+        </div>
+        <Field
+          def={{ name: 'date', label: 'تاریخ', type: 'date', col: 'third', required: true }}
+          values={{ date }}
+          setValue={(_n, v) => setDate(String(v))}
+        />
+        <div className="field third">
+          <label className="lbl">نوع سند</label>
+          <select
+            className="input"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+          >
+            {TX_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field half">
+          <label className="lbl">طرف حساب (از اشخاص)</label>
+          <select
+            className="input"
+            value={personId}
+            onChange={(e) => {
+              setPersonId(e.target.value);
+              const p = personById(s, e.target.value);
+              if (p) setPersonName(personLabel(p));
+            }}
+          >
+            <option value="">— انتخاب نشده —</option>
+            {s.persons.map((p) => (
+              <option key={p.id} value={p.id}>
+                {personLabel(p)} ({p.code})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field half">
+          <label className="lbl">نام طرف حساب (دستی)</label>
+          <input
+            className="input"
+            value={personName}
+            onChange={(e) => setPersonName(e.target.value)}
+            placeholder="اگر در لیست اشخاص نیست"
+          />
+        </div>
+
+        <div className="field third">
+          <label className="lbl">نوع پرداخت</label>
+          <select className="input" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+            {PAY_MODES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {payMode !== 'cash' ? (
+          <Field
+            def={{ name: 'dueDate', label: 'تاریخ سررسید', type: 'date', col: 'third' }}
+            values={{ dueDate }}
+            setValue={(_n, v) => setDueDate(String(v))}
+          />
+        ) : null}
+        {payMode === 'mixed' ? (
+          <div className="field third">
+            <label className="lbl">بیعانه</label>
+            {numInput(deposit, setDeposit)}
+          </div>
+        ) : null}
+
+        <div className="field third">
+          <label className="lbl">سالن</label>
+          <input className="input" value={hall} onChange={(e) => setHall(e.target.value)} />
+        </div>
+        <div className="field third">
+          <label className="lbl">دوره پرورش (گله)</label>
+          <select className="input" value={flockId} onChange={(e) => setFlockId(e.target.value)}>
+            <option value="">عمومی مزرعه</option>
+            {s.flocks.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field third">
+          <label className="lbl">محل ورود به انبار</label>
+          <select
+            className="input"
+            value={warehouse}
+            onChange={(e) => setWarehouse(e.target.value)}
+          >
+            {WAREHOUSES.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* اقلام فاکتور */}
+      <div className="sec-head" style={{ marginTop: 16 }}>
+        <div>
+          <h3>اقلام فاکتور</h3>
+          <span className="sec-sub">{n(rows.length)} قلم</span>
+        </div>
+      </div>
+
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>کالا / شرح</th>
+              <th style={{ width: 96 }}>واحد</th>
+              <th style={{ width: 78 }}>تعداد</th>
+              <th style={{ width: 110 }}>قیمت واحد</th>
+              <th style={{ width: 110 }}>جمع</th>
+              <th style={{ width: 34 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td>
+                  <input
+                    className="input"
+                    value={r.name}
+                    placeholder="مثلاً جوجه یک روزه"
+                    onChange={(e) => setRow(r.key, { name: e.target.value })}
+                  />
+                </td>
+                <td>
+                  <select
+                    className="input"
+                    value={r.unit}
+                    onChange={(e) => setRow(r.key, { unit: e.target.value })}
+                  >
+                    {units.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <input
+                    className="input num"
+                    inputMode="numeric"
+                    value={r.qty ? String(r.qty) : ''}
+                    onChange={(e) => setRow(r.key, { qty: num(e.target.value) })}
+                  />
+                </td>
+                <td>
+                  <input
+                    className="input num"
+                    inputMode="numeric"
+                    value={r.price ? String(r.price) : ''}
+                    onChange={(e) => setRow(r.key, { price: num(e.target.value) })}
+                  />
+                </td>
+                <td className="num-cell">{n(num(r.qty) * num(r.price))}</td>
+                <td>
+                  <button
+                    className="icon-btn sm"
+                    type="button"
+                    onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
+                  >
+                    <Icon name="trash" size={13} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <button
+        className="btn sm mt-sm"
+        type="button"
+        onClick={() =>
+          setRows((prev) => [
+            ...prev,
+            { key: Date.now(), name: '', unit: units[0], qty: 1, price: 0 },
+          ])
+        }
+      >
+        <Icon name="plus" size={14} /> افزودن قلم
+      </button>
+
+      {/* مبالغ */}
+      <div className="form-grid mt">
+        <div className="field third">
+          <label className="lbl">تخفیف</label>
+          {numInput(discount, setDiscount)}
+        </div>
+        <div className="field third">
+          <label className="lbl">هزینه جانبی</label>
+          {numInput(extraCost, setExtraCost)}
+        </div>
+        <div className="field third">
+          <label className="lbl">مبلغ کل</label>
+          <input className="input num" value={money(total)} readOnly />
+        </div>
+      </div>
+
+      {/* سهم شرکا */}
+      <div className="sec-head" style={{ marginTop: 14 }}>
+        <div>
+          <h3>سهم شرکا در این معامله</h3>
+          <span className="sec-sub">
+            جمع: {n(shareSum, 1)}٪ {Math.abs(shareSum - 100) > 0.5 ? '— بهتر است ۱۰۰ باشد' : ''}
+          </span>
+        </div>
+      </div>
+      <div className="form-grid">
+        {s.partners.map((p) => (
+          <div className="field third" key={p.id}>
+            <label className="lbl">{p.name}</label>
+            <input
+              className="input num"
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              value={shares[p.id] ?? 0}
+              onChange={(e) =>
+                setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
+              }
+            />
+            <div className="hint">{money(Math.round((total * num(shares[p.id])) / 100))}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="field full mt-sm">
+        <label className="lbl">توضیحات</label>
+        <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+    </Modal>
+  );
+}
+
+/* --------------------------- دریافت و پرداخت --------------------------- */
+export function PaymentForm({
+  id,
+  presetKind,
+  onClose,
+}: {
+  id?: string;
+  presetKind?: 'in' | 'out';
+  onClose: () => void;
+}) {
+  const s = useApp();
+  const { toast } = useUI();
+  const editing = id ? s.payments.find((p) => p.id === id) : null;
+
+  const fields: FieldDef[] = [
+    { name: 'code', label: 'شماره سند', type: 'text', col: 'third', hint: 'خودکار' },
+    { name: 'date', label: 'تاریخ', type: 'date', required: true, col: 'third' },
+    {
+      name: 'kind',
+      label: 'نوع',
+      type: 'select',
+      required: true,
+      col: 'third',
+      options: [
+        { value: 'in', label: 'دریافت' },
+        { value: 'out', label: 'پرداخت' },
+      ],
+    },
+    {
+      name: 'accountType',
+      label: 'حساب',
+      type: 'select',
+      col: 'half',
+      options: [
+        { value: 'fund', label: 'صندوق مشترک' },
+        { value: 'partner', label: 'شخص (شریک)' },
+      ],
+    },
+    {
+      name: 'partnerId',
+      label: 'شریک حساب',
+      type: 'select',
+      col: 'half',
+      options: s.partners.map((p) => ({ value: p.id, label: p.name })),
+    },
+    {
+      name: 'payerId',
+      label: 'پرداخت‌کننده (شریک)',
+      type: 'select',
+      col: 'half',
+      options: [{ value: '', label: '—' }].concat(
+        s.partners.map((p) => ({ value: p.id, label: p.name })),
+      ),
+    },
+    {
+      name: 'ownerId',
+      label: 'مالک معامله (شریک)',
+      type: 'select',
+      col: 'half',
+      options: [{ value: '', label: '—' }].concat(
+        s.partners.map((p) => ({ value: p.id, label: p.name })),
+      ),
+    },
+    {
+      name: 'personId',
+      label: 'شخص (مشتری / تامین‌کننده)',
+      type: 'select',
+      col: 'half',
+      options: [{ value: '', label: '—' }].concat(
+        s.persons.map((p) => ({ value: p.id, label: personLabel(p) })),
+      ),
+    },
+    { name: 'amount', label: 'مبلغ', type: 'money', required: true, col: 'half' },
+    {
+      name: 'method',
+      label: 'روش پرداخت',
+      type: 'select',
+      col: 'third',
+      options: PAYMENT_METHODS,
+    },
+    {
+      name: 'transactionId',
+      label: 'معامله مرتبط',
+      type: 'select',
+      col: 'third',
+      options: [{ value: '', label: '—' }].concat(
+        s.transactions.map((t) => ({
+          value: t.id,
+          label: `${t.code} · ${TX_TYPE_LABEL[t.type] || t.type} · ${n(t.total)}`,
+        })),
+      ),
+    },
+    { name: 'note', label: 'توضیحات', type: 'textarea', col: 'full' },
+  ];
+
+  return (
+    <FormModal
+      title={editing ? `ویرایش سند ${editing.code}` : 'سند دریافت / پرداخت جدید'}
+      fields={fields}
+      initial={
+        editing
+          ? { ...editing }
+          : {
+              code: nextCode('D', s.payments.map((p) => p.code)),
+              date: today(),
+              kind: presetKind || 'in',
+              accountType: 'fund',
+              partnerId: s.partners[0]?.id || '',
+              payerId: '',
+              ownerId: '',
+              personId: '',
+              amount: 0,
+              method: 'cash',
+              transactionId: '',
+              note: '',
+            }
+      }
+      onClose={onClose}
+      onSubmit={(v) => {
+        const data: FormValues = { ...v, amount: num(v.amount) };
+        if (editing) actions.update('payments', editing.id, data as Partial<PaymentDoc>);
+        else actions.add('payments', data as unknown as PaymentDoc);
+        toast('سند ثبت شد');
+      }}
+    />
+  );
+}

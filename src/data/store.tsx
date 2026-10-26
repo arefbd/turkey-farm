@@ -32,9 +32,13 @@ import type {
   ExpenseFilter,
   FlockStats,
   Formula,
+  Person,
   Settlement,
   Settings,
   Totals,
+  Transaction,
+  TxItem,
+  TxSums,
 } from './types';
 
 /* ------------------------------ ابزار عددی ------------------------------ */
@@ -59,6 +63,8 @@ function normalize(s: AppState): AppState {
     'vaccines',
     'batches',
     'contributions',
+    'transactions',
+    'payments',
   ];
   const next = { ...s };
   for (const col of cols) {
@@ -73,9 +79,19 @@ function normalize(s: AppState): AppState {
   }
   next.flocks = (next.flocks || []).map((f) => ({
     ...f,
+    chickAge: num(f.chickAge),
     startDate: J.norm(f.startDate) || f.startDate,
     endDate: f.endDate ? J.norm(f.endDate) || f.endDate : '',
   }));
+  next.inventory = (next.inventory || []).map((i) => ({
+    ...i,
+    code: i.code || '',
+    active: i.active !== false,
+    note: i.note || '',
+  }));
+  next.persons = next.persons || [];
+  next.transactions = next.transactions || [];
+  next.payments = next.payments || [];
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
 }
@@ -367,17 +383,107 @@ export function totals(s: AppState, filter: ExpenseFilter = {}): Totals {
   if (filter.from) sales = sales.filter((x) => J.jdn(x.date) >= J.jdn(filter.from!));
   if (filter.to) sales = sales.filter((x) => J.jdn(x.date) <= J.jdn(filter.to!));
 
+  let txs = s.transactions.slice();
+  if (filter.flockId) txs = txs.filter((t) => t.flockId === filter.flockId);
+  if (filter.from) txs = txs.filter((t) => J.jdn(t.date) >= J.jdn(filter.from!));
+  if (filter.to) txs = txs.filter((t) => J.jdn(t.date) <= J.jdn(filter.to!));
+
   const exp = sum(exps, 'amount');
-  const rev = sum(sales, 'amount');
+  const legacyRev = sum(sales, 'amount');
+  const tx = sumTransactions(txs);
+  const rev = legacyRev + tx.revenue;
+  const profit = rev - exp - tx.purchase;
+
   return {
     expenses: exp,
+    purchase: tx.purchase,
     revenue: rev,
-    profit: rev - exp,
-    count: exps.length,
-    salesCount: sales.length,
+    profit,
+    count: exps.length + txs.length,
+    salesCount: sales.length + tx.saleCount,
     salesKg: sum(sales, 'qtyKg'),
-    margin: rev > 0 ? ((rev - exp) / rev) * 100 : 0,
+    margin: rev > 0 ? (profit / rev) * 100 : 0,
   };
+}
+
+/** جمع معاملات: فروش خالص و بهای خرید خالص */
+export function sumTransactions(list: Transaction[]): TxSums {
+  let revenue = 0;
+  let purchase = 0;
+  let saleReturn = 0;
+  let purchaseReturn = 0;
+  let saleCount = 0;
+  let purchaseCount = 0;
+
+  list.forEach((t) => {
+    const total = num(t.total);
+    if (t.type === 'sale') {
+      revenue += total;
+      saleCount += 1;
+    } else if (t.type === 'sale_return') {
+      revenue -= total;
+      saleReturn += total;
+    } else if (t.type === 'purchase') {
+      purchase += total;
+      purchaseCount += 1;
+    } else if (t.type === 'purchase_return') {
+      purchase -= total;
+      purchaseReturn += total;
+    }
+  });
+
+  return {
+    revenue,
+    purchase,
+    saleReturn,
+    purchaseReturn,
+    count: list.length,
+    saleCount,
+    purchaseCount,
+  };
+}
+
+/** تعداد فروش‌رفته یک گله — محاسبه خودکار از معاملات فروش */
+export function soldCountForFlock(s: AppState, flockId: string): number {
+  let n = 0;
+  s.transactions.forEach((t) => {
+    if (t.flockId !== flockId) return;
+    const qty = (t.items || []).reduce((a, i) => a + num(i.qty), 0);
+    if (t.type === 'sale') n += qty;
+    else if (t.type === 'sale_return') n -= qty;
+  });
+  return Math.max(0, Math.round(n));
+}
+
+export function personById(s: AppState, id: string) {
+  return s.persons.find((p) => p.id === id) ?? null;
+}
+
+export function personLabel(p: Person | null | undefined): string {
+  if (!p) return '—';
+  if (p.company) return p.company;
+  return `${p.firstName} ${p.lastName}`.trim() || p.code;
+}
+
+export function personName(s: AppState, id: string): string {
+  if (!id) return '—';
+  return personLabel(personById(s, id));
+}
+
+/** تولید کد یکتا با پیشوند (P-1001، S-1001 ...) */
+export function nextCode(prefix: string, existing: string[]): string {
+  let max = 1000;
+  existing.forEach((c) => {
+    const m = String(c || '').match(/(\d+)$/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return `${prefix}-${max + 1}`;
+}
+
+/** مبلغ کل یک معامله با احتساب تخفیف و هزینه جانبی */
+export function txTotal(items: TxItem[], discount = 0, extraCost = 0): number {
+  const base = (items || []).reduce((a, i) => a + num(i.qty) * num(i.price), 0);
+  return Math.max(0, base - num(discount) + num(extraCost));
 }
 
 export function byCategory(s: AppState, filter: ExpenseFilter = {}): CategorySlice[] {
@@ -466,14 +572,15 @@ export function flockStats(s: AppState, id: string): FlockStats | null {
     }
   });
 
-  const sold = num(f.soldCount);
+  const sold = num(f.soldCount) + soldCountForFlock(s, id);
   const alive = Math.max(0, num(f.startCount) - mort - culled - sold);
   const end = f.endDate || J.today();
-  const age = Math.max(0, J.diff(f.startDate, end));
+  const age = Math.max(0, J.diff(f.startDate, end)) + num(f.chickAge);
   const biomass = (alive * lastW) / 1000;
   const gainKg = biomass - num(f.startCount) * 0.06;
-  const exp = sum(s.expenses.filter((e) => e.flockId === id), 'amount');
-  const rev = sum(s.sales.filter((x) => x.flockId === id), 'amount');
+  const tx = sumTransactions(s.transactions.filter((t) => t.flockId === id));
+  const exp = sum(s.expenses.filter((e) => e.flockId === id), 'amount') + tx.purchase;
+  const rev = sum(s.sales.filter((x) => x.flockId === id), 'amount') + tx.revenue;
 
   return {
     flock: f,

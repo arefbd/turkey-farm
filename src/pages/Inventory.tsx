@@ -13,7 +13,7 @@ export function Inventory() {
   const items = s.inventory
     .slice()
     .sort((a, b) => num(a.qty) - num(a.min) - (num(b.qty) - num(b.min)));
-  const low = items.filter((i) => num(i.qty) <= num(i.min));
+  const low = items.filter((i) => i.active !== false && num(i.qty) <= num(i.min));
   const value = items.reduce((a, i) => a + num(i.qty) * num(i.pricePerKg), 0);
 
   return (
@@ -72,6 +72,7 @@ export function Inventory() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th>کد</th>
                   <th>کالا</th>
                   <th>دسته</th>
                   <th>موجودی</th>
@@ -85,9 +86,11 @@ export function Inventory() {
                 {items.map((i) => {
                   const isLow = num(i.qty) <= num(i.min);
                   return (
-                    <tr key={i.id}>
+                    <tr key={i.id} style={i.active === false ? { opacity: 0.55 } : undefined}>
+                      <td className="num-cell">{i.code || '—'}</td>
                       <td>
                         <b>{i.name}</b>
+                        {i.active === false ? <div className="hint">غیرفعال</div> : null}
                       </td>
                       <td>{i.cat || '—'}</td>
                       <td className="num-cell">

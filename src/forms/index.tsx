@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { FormModal, type FieldDef, type FormValues } from '../components/Form';
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
-import { actions, num, useApp } from '../data/store';
+import { actions, nextCode, num, useApp } from '../data/store';
 import {
+  CHICK_AGE_DEFAULT,
+  CHICK_TYPES,
   CATEGORIES,
   CAT_MAP,
   INVENTORY_CATS,
@@ -616,10 +618,10 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
         hall: 'سالن ۱',
         startDate: today(),
         startCount: '',
-        chickType: 'جوجه یک‌روزه',
+        chickType: 'یک روزه',
+        chickAge: CHICK_AGE_DEFAULT['یک روزه'],
         status: 'active',
         endDate: '',
-        soldCount: 0,
         notes: '',
       };
 
@@ -628,14 +630,22 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
     { name: 'code', label: 'کد', type: 'text', col: 'third' },
     { name: 'breed', label: 'نژاد', type: 'text', col: 'third' },
     { name: 'hall', label: 'سالن', type: 'text', col: 'third' },
-    { name: 'startDate', label: 'تاریخ شروع', type: 'date', required: true, col: 'half' },
+    { name: 'startDate', label: 'تاریخ ورود به سالن', type: 'date', required: true, col: 'half' },
     { name: 'startCount', label: 'تعداد اولیه', type: 'number', required: true, col: 'half' },
     {
       name: 'chickType',
       label: 'نوع جوجه',
       type: 'select',
+      required: true,
       col: 'half',
-      options: ['جوجه یک‌روزه', 'جوجه ۱۵ روزه'],
+      options: CHICK_TYPES,
+    },
+    {
+      name: 'chickAge',
+      label: 'سن جوجه هنگام ورود (روز)',
+      type: 'number',
+      col: 'half',
+      hint: 'سن واقعی پرنده از این عدد شروع می‌شود',
     },
     {
       name: 'status',
@@ -648,7 +658,6 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
       ],
     },
     { name: 'endDate', label: 'تاریخ پایان', type: 'date', col: 'half' },
-    { name: 'soldCount', label: 'تعداد فروش رفته', type: 'number', col: 'half' },
     { name: 'notes', label: 'توضیحات', type: 'textarea', col: 'full' },
   ];
 
@@ -658,11 +667,16 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
       fields={fields}
       initial={initial}
       onClose={onClose}
+      onChange={(name, value) => {
+        if (name === 'chickType') {
+          return { chickAge: CHICK_AGE_DEFAULT[String(value)] ?? 1 };
+        }
+      }}
       onSubmit={(v) => {
         const data: FormValues = {
           ...v,
           startCount: num(v.startCount),
-          soldCount: num(v.soldCount),
+          chickAge: num(v.chickAge),
         };
         if (editing) actions.update('flocks', editing.id, asPatch<Flock>(data));
         else actions.add('flocks', asNew<Flock>(data));
@@ -680,15 +694,31 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
 
   const initial: FormValues = editing
     ? { ...editing }
-    : { name: '', cat: 'خوراک', unit: 'کیلوگرم', qty: 0, min: 0, pricePerKg: 0 };
+    : {
+        code: nextCode('K', s.inventory.map((i) => i.code)),
+        name: '',
+        cat: INVENTORY_CATS[0],
+        unit: UNITS[0],
+        qty: 0,
+        min: 0,
+        pricePerKg: 0,
+        active: true,
+        note: '',
+      };
+
+  const cats = Array.from(new Set([...INVENTORY_CATS, ...(s.settings.itemCats || [])]));
+  const units = Array.from(new Set([...UNITS, ...(s.settings.units || [])]));
 
   const fields: FieldDef[] = [
+    { name: 'code', label: 'کد کالا', type: 'text', col: 'third', hint: 'خودکار' },
     { name: 'name', label: 'نام کالا', type: 'text', required: true, col: 'half' },
-    { name: 'cat', label: 'دسته', type: 'select', col: 'half', options: INVENTORY_CATS },
+    { name: 'active', label: 'کالا فعال است', type: 'checkbox', col: 'third' },
+    { name: 'cat', label: 'دسته', type: 'select', col: 'half', options: cats },
+    { name: 'unit', label: 'واحد', type: 'select', col: 'half', options: units },
     { name: 'qty', label: 'موجودی فعلی', type: 'number', col: 'third' },
-    { name: 'unit', label: 'واحد', type: 'select', col: 'third', options: UNITS },
     { name: 'min', label: 'حد هشدار', type: 'number', col: 'third' },
-    { name: 'pricePerKg', label: 'قیمت واحد (تومان)', type: 'money', col: 'half' },
+    { name: 'pricePerKg', label: 'قیمت واحد (تومان)', type: 'money', col: 'third' },
+    { name: 'note', label: 'توضیحات', type: 'textarea', col: 'full' },
   ];
 
   return (
@@ -697,18 +727,77 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
       fields={fields}
       initial={initial}
       onClose={onClose}
+      extra={(_v, setValue) => (
+        <div className="grid grid-2" style={{ gap: 8, marginTop: 10 }}>
+          <AddInline
+            label="دسته جدید"
+            placeholder="مثلاً بسته‌بندی"
+            onAdd={(val) => {
+              actions.setSettings({ itemCats: Array.from(new Set([...(s.settings.itemCats || []), val])) });
+              setValue('cat', val);
+            }}
+          />
+          <AddInline
+            label="واحد جدید"
+            placeholder="مثلاً کارتن"
+            onAdd={(val) => {
+              actions.setSettings({ units: Array.from(new Set([...(s.settings.units || []), val])) });
+              setValue('unit', val);
+            }}
+          />
+        </div>
+      )}
       onSubmit={(v) => {
         const data: FormValues = {
           ...v,
           qty: num(v.qty),
           min: num(v.min),
           pricePerKg: num(v.pricePerKg),
+          active: v.active !== false,
         };
         if (editing) actions.update('inventory', editing.id, asPatch<InventoryItem>(data));
         else actions.add('inventory', asNew<InventoryItem>(data));
         toast('کالا ذخیره شد');
       }}
     />
+  );
+}
+
+/** ورودی کوچک «افزودن مورد جدید» (دسته/واحد) */
+function AddInline({
+  label,
+  placeholder,
+  onAdd,
+}: {
+  label: string;
+  placeholder: string;
+  onAdd: (value: string) => void;
+}) {
+  const [val, setVal] = useState('');
+  return (
+    <div className="field full">
+      <label className="lbl">{label}</label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          className="input"
+          value={val}
+          placeholder={placeholder}
+          onChange={(e) => setVal(e.target.value)}
+        />
+        <button
+          className="btn sm"
+          type="button"
+          onClick={() => {
+            const v = val.trim();
+            if (!v) return;
+            onAdd(v);
+            setVal('');
+          }}
+        >
+          <Icon name="plus" size={14} /> افزودن
+        </button>
+      </div>
+    </div>
   );
 }
 

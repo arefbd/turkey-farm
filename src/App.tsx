@@ -12,6 +12,9 @@ import { Flocks } from './pages/Flocks';
 import { FlockDetail } from './pages/FlockDetail';
 import { Expenses } from './pages/Expenses';
 import { Sales } from './pages/Sales';
+import { Transactions } from './pages/Transactions';
+import { Payments } from './pages/Payments';
+import { Persons } from './pages/Persons';
 import { Partners } from './pages/Partners';
 import { Feed } from './pages/Feed';
 import { Inventory } from './pages/Inventory';
@@ -37,9 +40,11 @@ interface NavItem {
 export const NAV: NavItem[] = [
   { id: 'dashboard', label: 'داشبورد', icon: 'home', group: 'اصلی' },
   { id: 'flocks', label: 'گله‌ها و ثبت روزانه', icon: 'egg', group: 'اصلی' },
+  { id: 'transactions', label: 'معاملات (خرید و فروش)', icon: 'receipt', group: 'مالی' },
   { id: 'expenses', label: 'هزینه‌ها', icon: 'wallet', group: 'مالی' },
-  { id: 'sales', label: 'فروش و درآمد', icon: 'tag', group: 'مالی' },
-  { id: 'partners', label: 'شرکا و تسویه', icon: 'users', group: 'مالی' },
+  { id: 'payments', label: 'دریافت‌ها و پرداخت‌ها', icon: 'exchange', group: 'مالی' },
+  { id: 'persons', label: 'اشخاص (مشتری/تامین‌کننده)', icon: 'users', group: 'مالی' },
+  { id: 'partners', label: 'شرکا و تسویه', icon: 'scale', group: 'مالی' },
   { id: 'feed', label: 'خوراک و فرمول', icon: 'feed', group: 'عملیات' },
   { id: 'inventory', label: 'انبار', icon: 'box', group: 'عملیات' },
   { id: 'tasks', label: 'کارها و یادآور', icon: 'check', group: 'عملیات' },
@@ -77,6 +82,12 @@ function Page({ name, param }: { name: string; param: string }) {
       return <Expenses />;
     case 'sales':
       return <Sales />;
+    case 'transactions':
+      return <Transactions />;
+    case 'payments':
+      return <Payments />;
+    case 'persons':
+      return <Persons />;
     case 'partners':
       return <Partners />;
     case 'feed':

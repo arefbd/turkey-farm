@@ -117,11 +117,11 @@ export function Reports() {
             </div>
           </div>
           <div className="stat" style={{ boxShadow: 'none', background: '#FEF4F4', borderColor: '#FEE2E2' }}>
-            <div className="stat-label">جمع هزینه‌ها</div>
+            <div className="stat-label">بهای خرید کالا</div>
             <div className="stat-value" style={{ color: '#DC2626' }}>
-              {short(t.expenses)}
+              {short(t.purchase)}
             </div>
-            <div className="stat-sub">{n(t.count)} رکورد هزینه</div>
+            <div className="stat-sub">هزینه عملیاتی {short(t.expenses)}</div>
           </div>
           <div className="stat" style={{ boxShadow: 'none', background: '#F7F4FF', borderColor: '#E4D6FF' }}>
             <div className="stat-label">{t.profit >= 0 ? 'سود' : 'زیان'} ناخالص</div>
@@ -145,7 +145,9 @@ export function Reports() {
           <span
             style={{
               width:
-                (t.revenue + t.expenses ? (t.revenue / (t.revenue + t.expenses)) * 100 : 0) + '%',
+                (t.revenue + t.expenses + t.purchase
+                  ? (t.revenue / (t.revenue + t.expenses + t.purchase)) * 100
+                  : 0) + '%',
               background: '#10B981',
             }}
           />
@@ -158,7 +160,7 @@ export function Reports() {
           </span>
           <span>
             <i style={{ background: '#EF4444' }} />
-            هزینه
+            خرید + هزینه
           </span>
         </div>
       </div>

@@ -15,6 +15,85 @@ export interface Settings {
   cycleDays: number;
   targetWeightG: number;
   chickWeightG: number;
+  /** واحدهای قابل ویرایش — افزوده‌های کاربر */
+  units: string[];
+  /** دسته‌های کالای انبار — افزوده‌های کاربر */
+  itemCats: string[];
+}
+
+/* ------------------------------- اشخاص (CRM) ------------------------------ */
+export type PersonType = 'customer' | 'supplier' | 'both';
+
+export interface Person extends Base {
+  code: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  type: PersonType;
+  nationalId: string;
+  phone: string;
+  address: string;
+  note: string;
+}
+
+/* -------------------------------- معاملات -------------------------------- */
+export type TxType = 'purchase' | 'sale' | 'purchase_return' | 'sale_return';
+export type PayMode = 'cash' | 'credit' | 'mixed';
+
+export interface TxItem {
+  name: string;
+  unit: string;
+  qty: number;
+  price: number;
+}
+
+export interface TxShare {
+  partnerId: string;
+  percent: number;
+  amount: number;
+}
+
+export interface Transaction extends Base {
+  code: string;
+  date: string;
+  type: TxType;
+  personId: string;
+  personName: string;
+  payMode: PayMode;
+  dueDate: string;
+  deposit: number;
+  hall: string;
+  flockId: string;
+  warehouse: string;
+  items: TxItem[];
+  discount: number;
+  extraCost: number;
+  total: number;
+  shares: TxShare[];
+  note: string;
+}
+
+/* --------------------------- دریافت و پرداخت --------------------------- */
+export type PaymentKind = 'in' | 'out';
+export type PaymentMethod = 'cash' | 'card' | 'transfer';
+
+export interface PaymentDoc extends Base {
+  code: string;
+  date: string;
+  kind: PaymentKind;
+  /** حساب: صندوق مشترک یا شخص (شریک) */
+  accountType: 'fund' | 'partner';
+  partnerId: string;
+  /** پرداخت‌کننده / دریافت‌کننده از شرکا */
+  payerId: string;
+  /** مالک معامله از شرکا */
+  ownerId: string;
+  /** طرف حساب بیرونی */
+  personId: string;
+  amount: number;
+  method: PaymentMethod;
+  transactionId: string;
+  note: string;
 }
 
 export interface Partner extends Base {
@@ -34,6 +113,8 @@ export interface Flock extends Base {
   startDate: string;
   startCount: number;
   chickType: string;
+  /** سن جوجه در روز هنگام ورود به سالن */
+  chickAge: number;
   status: 'active' | 'closed';
   endDate: string;
   soldCount: number;
@@ -131,12 +212,15 @@ export interface Contribution extends Base {
 }
 
 export interface InventoryItem extends Base {
+  code: string;
   name: string;
   unit: string;
   qty: number;
   min: number;
   pricePerKg: number;
   cat: string;
+  active: boolean;
+  note: string;
 }
 
 export interface Deal extends Base {
@@ -166,6 +250,9 @@ export interface AppState {
   inventory: InventoryItem[];
   contributions: Contribution[];
   deals: Deal[];
+  persons: Person[];
+  transactions: Transaction[];
+  payments: PaymentDoc[];
 }
 
 export type CollectionKey =
@@ -180,7 +267,10 @@ export type CollectionKey =
   | 'vaccines'
   | 'inventory'
   | 'contributions'
-  | 'deals';
+  | 'deals'
+  | 'persons'
+  | 'transactions'
+  | 'payments';
 
 export interface FlockStats {
   flock: Flock;
@@ -223,13 +313,26 @@ export interface Settlement {
 }
 
 export interface Totals {
+  /** هزینه‌های عملیاتی (دسته‌های هزینه) */
   expenses: number;
+  /** بهای خرید کالا از معاملات (خالص برگشتی) */
+  purchase: number;
   revenue: number;
   profit: number;
   count: number;
   salesCount: number;
   salesKg: number;
   margin: number;
+}
+
+export interface TxSums {
+  revenue: number;
+  purchase: number;
+  purchaseReturn: number;
+  saleReturn: number;
+  count: number;
+  saleCount: number;
+  purchaseCount: number;
 }
 
 export interface CategorySlice {

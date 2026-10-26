@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS: Settings = {
   cycleDays: 120,
   targetWeightG: 12000,
   chickWeightG: 60,
+  units: [],
+  itemCats: [],
 };
 
 let seq = 0;
@@ -51,6 +53,9 @@ export function blank(): AppState {
     inventory: [],
     contributions: [],
     deals: [],
+    persons: [],
+    transactions: [],
+    payments: [],
   };
 }
 
@@ -81,7 +86,8 @@ export function seed(): AppState {
       hall: 'سالن ۱',
       startDate: J.addDays(today, -42),
       startCount: 5000,
-      chickType: 'جوجه یک‌روزه',
+      chickType: 'یک روزه',
+      chickAge: 1,
       status: 'active',
       endDate: '',
       soldCount: 0,
@@ -95,7 +101,8 @@ export function seed(): AppState {
       hall: 'سالن ۲',
       startDate: J.addDays(today, -175),
       startCount: 4200,
-      chickType: 'جوجه ۱۵ روزه',
+      chickType: 'چند روزه',
+      chickAge: 15,
       status: 'closed',
       endDate: J.addDays(today, -25),
       soldCount: 4200,
@@ -335,7 +342,7 @@ export function seed(): AppState {
   ];
   s.tasks = tasks;
 
-  const inventory: InventoryItem[] = [
+  const inventory: Array<Omit<InventoryItem, 'code' | 'active' | 'note'>> = [
     { id: 'i1', name: 'دان پیش‌دان', unit: 'کیلوگرم', qty: 3200, min: 2000, pricePerKg: 34000, cat: 'خوراک' },
     { id: 'i2', name: 'دان پس‌دان', unit: 'کیلوگرم', qty: 8400, min: 5000, pricePerKg: 30500, cat: 'خوراک' },
     { id: 'i3', name: 'ذرت', unit: 'کیلوگرم', qty: 2600, min: 3000, pricePerKg: 21000, cat: 'مواد اولیه' },
@@ -344,7 +351,12 @@ export function seed(): AppState {
     { id: 'i6', name: 'ویتامین AD3E', unit: 'لیتر', qty: 6, min: 8, pricePerKg: 0, cat: 'دارو' },
     { id: 'i7', name: 'گازوئیل', unit: 'لیتر', qty: 180, min: 300, pricePerKg: 55000, cat: 'سوخت' },
   ];
-  s.inventory = inventory;
+  s.inventory = inventory.map((i, idx) => ({
+    ...i,
+    code: 'K-' + (1001 + idx),
+    active: true,
+    note: '',
+  }));
 
   const contributions: Contribution[] = [
     { id: 'c1', partnerId: 'p1', date: J.addDays(today, -60), amount: 500000000, note: 'آورده نقدی اولیه' },
@@ -357,6 +369,38 @@ export function seed(): AppState {
 
   const deals: Deal[] = [];
   s.deals = deals;
+
+  /* --- اشخاص (مشتری / تامین‌کننده) --- */
+  s.persons = [
+    {
+      id: 'crm1',
+      code: 'P-1001',
+      firstName: 'کشتارگاه',
+      lastName: 'مرکزی',
+      company: 'کشتارگاه مرکزی',
+      type: 'customer',
+      nationalId: '14001234567',
+      phone: '02155443322',
+      address: 'تهران، جاده قدیم کرج',
+      note: 'خریدار اصلی گوشت',
+    },
+    {
+      id: 'crm2',
+      code: 'P-1002',
+      firstName: 'خوراک دام',
+      lastName: 'پارس',
+      company: 'خوراک دام پارس',
+      type: 'supplier',
+      nationalId: '14009876543',
+      phone: '02166778899',
+      address: 'کرج، شهرک صنعتی',
+      note: 'تامین دان آماده',
+    },
+  ];
+
+  /* --- معاملات نمونه --- */
+  s.transactions = [];
+  s.payments = [];
 
   return s;
 }

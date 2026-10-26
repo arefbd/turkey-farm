@@ -170,6 +170,18 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M6 12h.01M18 12h.01" />
     </>
   ),
+  receipt: (
+    <>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+      <path d="M9.5 8h5M9.5 12h5" />
+    </>
+  ),
+  exchange: (
+    <>
+      <path d="M4 8h13l-3.2-3.2" />
+      <path d="M20 16H7l3.2 3.2" />
+    </>
+  ),
   alert: (
     <>
       <path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />

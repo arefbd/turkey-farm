@@ -67,3 +67,69 @@ export const INVENTORY_CAT_TO_EXPENSE: Record<string, string> = {
 };
 
 export const TASK_TYPES = ['عمومی', 'واکسن', 'توزین', 'خرید', 'مالی', 'بازدید'];
+
+/* ----------------------------- انواع جوجه ----------------------------- */
+export const CHICK_TYPES = ['یک روزه', 'چند روزه', 'نیمچه', 'پروار'];
+
+/** سن پیش‌فرض هر نوع جوجه (روز) — در فرم قابل ویرایش است */
+export const CHICK_AGE_DEFAULT: Record<string, number> = {
+  'یک روزه': 1,
+  'چند روزه': 10,
+  نیمچه: 35,
+  پروار: 80,
+};
+
+/* ------------------------------- اشخاص -------------------------------- */
+export const PERSON_TYPES: Array<{ value: string; label: string }> = [
+  { value: 'customer', label: 'مشتری' },
+  { value: 'supplier', label: 'تامین‌کننده' },
+  { value: 'both', label: 'مشتری و تامین‌کننده' },
+];
+
+export const PERSON_TYPE_LABEL: Record<string, string> = {
+  customer: 'مشتری',
+  supplier: 'تامین‌کننده',
+  both: 'مشتری و تامین‌کننده',
+};
+
+/* ------------------------------ معاملات ------------------------------- */
+export const TX_TYPES: Array<{ value: string; label: string; sign: 1 | -1 }> = [
+  { value: 'purchase', label: 'خرید', sign: -1 },
+  { value: 'sale', label: 'فروش', sign: 1 },
+  { value: 'purchase_return', label: 'برگشت از خرید', sign: 1 },
+  { value: 'sale_return', label: 'برگشت از فروش', sign: -1 },
+];
+
+export const TX_TYPE_LABEL: Record<string, string> = {
+  purchase: 'خرید',
+  sale: 'فروش',
+  purchase_return: 'برگشت از خرید',
+  sale_return: 'برگشت از فروش',
+};
+
+export const PAY_MODES: Array<{ value: string; label: string }> = [
+  { value: 'cash', label: 'نقد' },
+  { value: 'credit', label: 'نسیه' },
+  { value: 'mixed', label: 'نقد و نسیه' },
+];
+
+export const PAY_MODE_LABEL: Record<string, string> = {
+  cash: 'نقد',
+  credit: 'نسیه',
+  mixed: 'نقد و نسیه',
+};
+
+/* --------------------------- دریافت / پرداخت --------------------------- */
+export const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
+  { value: 'cash', label: 'نقد' },
+  { value: 'card', label: 'کارت' },
+  { value: 'transfer', label: 'انتقال' },
+];
+
+export const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  cash: 'نقد',
+  card: 'کارت',
+  transfer: 'انتقال',
+};
+
+export const WAREHOUSES = ['انبار دان', 'انبار دارو', 'انبار سرد', 'انبار عمومی'];
