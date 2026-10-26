@@ -535,8 +535,12 @@ export function openItems(s: AppState): OpenItem[] {
   return s.transactions
     .filter((t) => t.type === 'sale' || t.type === 'purchase')
     .map((t) => {
-      const paid = paidByTx[t.id] || 0;
-      const remaining = Math.max(0, num(t.total) - paid);
+      const total = num(t.total);
+      // فاکتور نقدی همان لحظه تسویه شده؛ نقد و نسیه فقط به اندازه بیعانه
+      const baseline =
+        t.payMode === 'cash' ? total : t.payMode === 'mixed' ? num(t.deposit) : 0;
+      const paid = Math.min(total, Math.max(paidByTx[t.id] || 0, baseline));
+      const remaining = Math.max(0, total - paid);
       const due = t.dueDate || '';
       const overdueDays = remaining > 0 && due ? Math.max(0, J.diff(due, J.today())) : 0;
       return {
