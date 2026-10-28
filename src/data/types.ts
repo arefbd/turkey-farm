@@ -272,11 +272,8 @@ export interface Account extends Base {
 export interface Transfer extends Base {
   code: string;
   date: string;
-  /** مبدأ: صندوق مشترک یا دست شریک */
-  fromType: 'fund' | 'partner';
-  fromId: string;
-  toType: 'fund' | 'partner';
-  toId: string;
+  fromAccountId: string;
+  toAccountId: string;
   amount: number;
   note: string;
   locked: boolean;

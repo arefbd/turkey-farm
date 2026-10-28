@@ -646,10 +646,8 @@ export function accountBalance(s: AppState, accountId: string): number {
     bal += p.kind === 'in' ? num(p.amount) : -num(p.amount);
   });
   s.transfers.forEach((t) => {
-    if (t.toType !== 'fund' && t.toId === accountId) bal += num(t.amount);
-    if (t.fromType !== 'fund' && t.fromId === accountId) bal -= num(t.amount);
-    if (t.toType === 'fund' && acc.kind !== 'جیب شریک' && t.toId === accountId) bal += num(t.amount);
-    if (t.fromType === 'fund' && acc.kind !== 'جیب شریک' && t.fromId === accountId) bal -= num(t.amount);
+    if (t.toAccountId === accountId) bal += num(t.amount);
+    if (t.fromAccountId === accountId) bal -= num(t.amount);
   });
   return bal;
 }
@@ -904,6 +902,14 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
       if (pay.kind === 'in' && pay.accountType === 'partner' && pay.partnerId === p.id) {
         received += num(pay.amount);
       }
+    });
+
+    // اثر انتقال بین حساب‌ها: پول از جیب شریک خارج یا به آن وارد شود
+    s.transfers.forEach((t) => {
+      const from = accountById(s, t.fromAccountId);
+      const to = accountById(s, t.toAccountId);
+      if (from?.kind === 'جیب شریک' && from.partnerId === p.id) paidOut += num(t.amount);
+      if (to?.kind === 'جیب شریک' && to.partnerId === p.id) received += num(t.amount);
     });
 
     return {

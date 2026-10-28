@@ -31,6 +31,7 @@ import { money, n } from '../lib/format';
 import type {
   Account,
   PaymentDoc,
+  Transfer,
   Person,
   Transaction,
   TxItem,
@@ -641,6 +642,76 @@ export function TransactionForm({
         <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
     </Modal>
+  );
+}
+
+/* ---------------------------- انتقال بین حساب‌ها --------------------------- */
+export function TransferForm({ id, onClose }: { id?: string; onClose: () => void }) {
+  const s = useApp();
+  const { toast } = useUI();
+  const editing = id ? s.transfers.find((t) => t.id === id) : null;
+  const accOpts = s.accounts
+    .filter((a) => a.active !== false)
+    .map((a) => ({ value: a.id, label: `${a.name} (${a.kind})` }));
+
+  const fields: FieldDef[] = [
+    { name: 'code', label: 'کد سند', type: 'text', col: 'third', hint: 'خودکار' },
+    { name: 'date', label: 'تاریخ', type: 'date', required: true, col: 'third' },
+    { name: 'amount', label: 'مبلغ', type: 'money', required: true, col: 'third' },
+    {
+      name: 'fromAccountId',
+      label: 'از حساب',
+      type: 'select',
+      required: true,
+      col: 'half',
+      options: accOpts,
+    },
+    {
+      name: 'toAccountId',
+      label: 'به حساب',
+      type: 'select',
+      required: true,
+      col: 'half',
+      options: accOpts,
+    },
+    { name: 'note', label: 'توضیحات', type: 'textarea', col: 'full' },
+  ];
+
+  const first = s.accounts[0]?.id || '';
+  const second = s.accounts[1]?.id || first;
+
+  return (
+    <FormModal
+      title={editing ? `ویرایش انتقال ${editing.code}` : 'انتقال بین حساب‌ها'}
+      fields={fields}
+      initial={
+        editing
+          ? { ...editing }
+          : {
+              code: nextCode('TR', s.transfers.map((t) => t.code)),
+              date: today(),
+              fromAccountId: first,
+              toAccountId: second,
+              amount: 0,
+              note: '',
+            }
+      }
+      onClose={onClose}
+      onSubmit={(v) => {
+        if (String(v.fromAccountId) === String(v.toAccountId)) {
+          toast('حساب مبدأ و مقصد نباید یکی باشند', 'error');
+          return false;
+        }
+        if (num(v.amount) <= 0) {
+          toast('مبلغ انتقال را وارد کنید', 'error');
+          return false;
+        }
+        const data: FormValues = { ...v, amount: num(v.amount) };
+        if (editing) actions.update('transfers', editing.id, data as unknown as Partial<Transfer>);
+        else actions.add('transfers', data as unknown as Transfer);
+        toast('انتقال ثبت شد');
+      }}
+    />
   );
 }
 

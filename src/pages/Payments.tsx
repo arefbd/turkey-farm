@@ -3,11 +3,11 @@ import { useState } from 'react';
 import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Chips, Empty, PageHead, Row, SectionHead, Stat } from '../components/ui';
-import { actions, num, partnerById, personName, useApp } from '../data/store';
+import { accountById, actions, num, partnerById, personName, useApp } from '../data/store';
 import { PAYMENT_METHOD_LABEL, TX_TYPE_LABEL } from '../data/categories';
 import { format } from '../lib/jalali';
 import { n, short } from '../lib/format';
-import { PaymentForm } from '../forms/crm';
+import { PaymentForm, TransferForm } from '../forms/crm';
 
 type Filter = 'all' | 'in' | 'out';
 
@@ -43,6 +43,12 @@ export function Payments() {
           <>
             <button className="btn" onClick={() => openForm(undefined, 'out')}>
               <Icon name="down" size={16} /> پرداخت
+            </button>
+            <button
+              className="btn"
+              onClick={() => ui.open(<TransferForm onClose={ui.close} />)}
+            >
+              <Icon name="exchange" size={16} /> انتقال
             </button>
             <button className="btn primary" onClick={() => openForm(undefined, 'in')}>
               <Icon name="plus" size={16} /> سند جدید
@@ -152,6 +158,63 @@ export function Payments() {
                 <Icon name="plus" size={14} /> سند جدید
               </button>
             }
+          />
+        )}
+      </div>
+
+      <div className="card mt">
+        <SectionHead
+          title="انتقال بین حساب‌ها"
+          sub={`${n(s.transfers.length)} سند — جابه‌جایی پول بین صندوق، بانک و جیب شرکا`}
+        />
+        {s.transfers.length ? (
+          <div className="rows">
+            {s.transfers
+              .slice()
+              .sort((a, b) => b.date.localeCompare(a.date))
+              .map((t) => {
+                const from = accountById(s, t.fromAccountId);
+                const to = accountById(s, t.toAccountId);
+                return (
+                  <Row
+                    key={t.id}
+                    icon="🔁"
+                    iconBg="#EEF2FF"
+                    title={`${from?.name || '—'} ← ${to?.name || '—'}`}
+                    sub={`${t.code} · ${format(t.date, 'long')}${t.note ? ' · ' + t.note : ''}`}
+                    amount={n(t.amount)}
+                    actions={
+                      <>
+                        <button
+                          className="icon-btn sm"
+                          onClick={() =>
+                            ui.open(<TransferForm id={t.id} onClose={ui.close} />)
+                          }
+                        >
+                          <Icon name="edit" size={15} />
+                        </button>
+                        <button
+                          className="icon-btn sm"
+                          onClick={async () => {
+                            const ok = await ui.confirm('این انتقال حذف شود؟', {
+                              danger: true,
+                              ok: 'حذف',
+                            });
+                            if (ok) actions.remove('transfers', t.id);
+                          }}
+                        >
+                          <Icon name="trash" size={15} />
+                        </button>
+                      </>
+                    }
+                  />
+                );
+              })}
+          </div>
+        ) : (
+          <Empty
+            title="انتقالی ثبت نشده"
+            text="برای جابه‌جایی پول بین حساب‌ها از دکمه «انتقال» استفاده کنید"
           />
         )}
       </div>
