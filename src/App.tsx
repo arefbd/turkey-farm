@@ -14,6 +14,7 @@ import { Expenses } from './pages/Expenses';
 import { Transactions } from './pages/Transactions';
 import { Payments } from './pages/Payments';
 import { Persons } from './pages/Persons';
+import { Accounts } from './pages/Accounts';
 import { Partners } from './pages/Partners';
 import { Feed } from './pages/Feed';
 import { Inventory } from './pages/Inventory';
@@ -41,6 +42,7 @@ export const NAV: NavItem[] = [
   { id: 'flocks', label: 'گله‌ها و ثبت روزانه', icon: 'egg', group: 'اصلی' },
   { id: 'transactions', label: 'معاملات (خرید و فروش)', icon: 'receipt', group: 'مالی' },
   { id: 'expenses', label: 'هزینه‌ها', icon: 'wallet', group: 'مالی' },
+  { id: 'accounts', label: 'حساب‌ها', icon: 'bank', group: 'مالی' },
   { id: 'payments', label: 'دریافت‌ها و پرداخت‌ها', icon: 'exchange', group: 'مالی' },
   { id: 'persons', label: 'اشخاص (مشتری/تامین‌کننده)', icon: 'users', group: 'مالی' },
   { id: 'partners', label: 'شرکا و تسویه', icon: 'scale', group: 'مالی' },
@@ -88,6 +90,8 @@ function Page({ name, param }: { name: string; param: string }) {
       return <Payments />;
     case 'persons':
       return <Persons />;
+    case 'accounts':
+      return <Accounts />;
     case 'partners':
       return <Partners />;
     case 'feed':

@@ -18,6 +18,8 @@ export const COLLECTIONS: CollectionKey[] = [
   'persons',
   'transactions',
   'payments',
+  'transfers',
+  'accounts',
   'stockMoves',
 ];
 

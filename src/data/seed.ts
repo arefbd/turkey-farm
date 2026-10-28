@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chickWeightG: 60,
   units: [],
   itemCats: [],
+  accountKinds: [],
 };
 
 let seq = 0;
@@ -56,6 +57,8 @@ export function blank(): AppState {
     persons: [],
     transactions: [],
     payments: [],
+    transfers: [],
+    accounts: [],
     stockMoves: [],
   };
 }
@@ -93,6 +96,12 @@ export function seed(): AppState {
       endDate: '',
       soldCount: 0,
       notes: 'دوره پروار ۱۲۰ روزه، تهویه سالن کنترل شود.',
+      shareMode: 'unit',
+      shares: [
+        { partnerId: 'p1', units: 3, percent: 33.33 },
+        { partnerId: 'p2', units: 4, percent: 44.44 },
+        { partnerId: 'p3', units: 2, percent: 22.22 },
+      ],
     },
     {
       id: 'f2',
@@ -108,6 +117,12 @@ export function seed(): AppState {
       endDate: J.addDays(today, -25),
       soldCount: 4200,
       notes: 'دوره تکمیل شده — میانگین وزن نهایی ۱۱.۸ کیلوگرم.',
+      shareMode: 'unit',
+      shares: [
+        { partnerId: 'p1', units: 3, percent: 33.33 },
+        { partnerId: 'p2', units: 4, percent: 44.44 },
+        { partnerId: 'p3', units: 2, percent: 22.22 },
+      ],
     },
   ];
   s.flocks = flocks;
@@ -371,6 +386,40 @@ export function seed(): AppState {
 
   const deals: Deal[] = [];
   s.deals = deals;
+
+  /* --- حساب‌ها --- */
+  s.accounts = [
+    {
+      id: 'acc1',
+      code: 'A-1001',
+      kind: 'صندوق مشترک',
+      name: 'صندوق مشترک شرکا',
+      opening: 0,
+      note: 'نقدینگی مشترک مزرعه',
+      partnerId: '',
+      active: true,
+    },
+    {
+      id: 'acc2',
+      code: 'A-1002',
+      kind: 'بانک',
+      name: 'حساب بانکی مزرعه',
+      opening: 0,
+      note: '',
+      partnerId: '',
+      active: true,
+    },
+    ...s.partners.map((p, i) => ({
+      id: 'acc-' + p.id,
+      code: 'A-' + (1003 + i),
+      kind: 'جیب شریک',
+      name: 'جیب ' + p.name,
+      opening: 0,
+      note: '',
+      partnerId: p.id,
+      active: true,
+    })),
+  ];
 
   /* --- اشخاص (مشتری / تامین‌کننده) --- */
   s.persons = [

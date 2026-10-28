@@ -170,6 +170,13 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M6 12h.01M18 12h.01" />
     </>
   ),
+  bank: (
+    <>
+      <path d="M3 10.5 12 4l9 6.5" />
+      <path d="M5.5 10.5V19M9.8 10.5V19M14.2 10.5V19M18.5 10.5V19" />
+      <path d="M3 19h18" />
+    </>
+  ),
   receipt: (
     <>
       <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />

@@ -26,6 +26,8 @@ export function Payments() {
     ui.open(<PaymentForm id={id} presetKind={kind} onClose={ui.close} />);
 
   const accountLabel = (p: (typeof all)[number]) => {
+    const acc = p.accountId ? s.accounts.find((a) => a.id === p.accountId) : null;
+    if (acc) return acc.name;
     if (p.accountType === 'partner') {
       return partnerById(s, p.partnerId)?.name || 'شریک';
     }

@@ -1,8 +1,9 @@
 /** همه فرم‌های ثبت/ویرایش — هر کدام یک مودال مستقل */
 import { useState } from 'react';
-import { FormModal, type FieldDef, type FormValues } from '../components/Form';
+import { FormModal, Field, type FieldDef, type FormValues } from '../components/Form';
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
+import { Chips } from '../components/ui';
 import { actions, nextCode, num, useApp } from '../data/store';
 import {
   CHICK_AGE_DEFAULT,
@@ -615,84 +616,250 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
   const { toast } = useUI();
   const editing = id ? s.flocks.find((f) => f.id === id) : null;
 
-  const initial: FormValues = editing
-    ? { ...editing }
-    : {
-        name: '',
-        code: 'F-' + (s.flocks.length + 1),
-        breed: 'B.U.T 6',
-        hall: 'سالن ۱',
-        startDate: today(),
-        startCount: '',
-        chickType: 'یک روزه',
-        chickAge: CHICK_AGE_DEFAULT['یک روزه'],
-        status: 'active',
-        endDate: '',
-        notes: '',
-      };
+  const [name, setName] = useState(editing?.name || '');
+  const [code, setCode] = useState(editing?.code || 'F-' + (s.flocks.length + 1));
+  const [breed, setBreed] = useState(editing?.breed || 'B.U.T 6');
+  const [hall, setHall] = useState(editing?.hall || 'سالن ۱');
+  const [startDate, setStartDate] = useState(editing?.startDate || today());
+  const [startCount, setStartCount] = useState(num(editing?.startCount));
+  const [chickType, setChickType] = useState(editing?.chickType || CHICK_TYPES[0]);
+  const [chickAge, setChickAge] = useState(
+    num(editing?.chickAge) || CHICK_AGE_DEFAULT[CHICK_TYPES[0]],
+  );
+  const [status, setStatus] = useState(editing?.status || 'active');
+  const [endDate, setEndDate] = useState(editing?.endDate || '');
+  const [notes, setNotes] = useState(editing?.notes || '');
+  const [shareMode, setShareMode] = useState<'unit' | 'percent'>(editing?.shareMode || 'unit');
+  const [rows, setRows] = useState<Array<{ partnerId: string; value: number }>>(() => {
+    if (editing?.shares?.length) {
+      return editing.shares.map((x) => ({
+        partnerId: x.partnerId,
+        value: editing.shareMode === 'percent' ? num(x.percent) : num(x.units),
+      }));
+    }
+    return s.partners.map((p) => ({ partnerId: p.id, value: 0 }));
+  });
 
-  const fields: FieldDef[] = [
-    { name: 'name', label: 'نام گله', type: 'text', required: true, col: 'full', placeholder: 'گله ۳ — زمستان ۱۴۰۵' },
-    { name: 'code', label: 'کد', type: 'text', col: 'third' },
-    { name: 'breed', label: 'نژاد', type: 'text', col: 'third' },
-    { name: 'hall', label: 'سالن', type: 'text', col: 'third' },
-    { name: 'startDate', label: 'تاریخ ورود به سالن', type: 'date', required: true, col: 'half' },
-    { name: 'startCount', label: 'تعداد اولیه', type: 'number', required: true, col: 'half' },
-    {
-      name: 'chickType',
-      label: 'نوع جوجه',
-      type: 'select',
-      required: true,
-      col: 'half',
-      options: CHICK_TYPES,
-    },
-    {
-      name: 'chickAge',
-      label: 'سن جوجه هنگام ورود (روز)',
-      type: 'number',
-      col: 'half',
-      hint: 'سن واقعی پرنده از این عدد شروع می‌شود',
-    },
-    {
-      name: 'status',
-      label: 'وضعیت',
-      type: 'select',
-      col: 'half',
-      options: [
-        { value: 'active', label: 'در حال پرورش' },
-        { value: 'closed', label: 'بسته شده' },
-      ],
-    },
-    { name: 'endDate', label: 'تاریخ پایان', type: 'date', col: 'half' },
-    { name: 'notes', label: 'توضیحات', type: 'textarea', col: 'full' },
-  ];
+  const total = rows.reduce((a, r) => a + num(r.value), 0);
+  const pctOf = (v: number) => (total > 0 ? (num(v) / total) * 100 : 0);
+
+  const recallPartners = () => {
+    const existing = new Map(rows.map((r) => [r.partnerId, r.value]));
+    setRows(s.partners.map((p) => ({ partnerId: p.id, value: existing.get(p.id) ?? 0 })));
+    toast('شرکا از بخش «شرکا و تسویه» بازخوانی شد');
+  };
+
+  const save = () => {
+    if (!name.trim()) {
+      toast('نام گله را وارد کنید', 'error');
+      return;
+    }
+    const shares = rows
+      .filter((r) => num(r.value) > 0)
+      .map((r) => ({
+        partnerId: r.partnerId,
+        units: shareMode === 'unit' ? num(r.value) : pctOf(r.value),
+        percent: pctOf(r.value),
+      }));
+
+    const data = {
+      name: name.trim(),
+      code,
+      breed,
+      hall,
+      startDate,
+      startCount: num(startCount),
+      chickType,
+      chickAge: num(chickAge),
+      status,
+      endDate: status === 'closed' ? endDate : '',
+      notes,
+      shares,
+      shareMode,
+    };
+
+    if (editing) actions.update('flocks', editing.id, data as Partial<Flock>);
+    else actions.add('flocks', { ...data, soldCount: 0 } as unknown as Flock);
+    toast('گله ذخیره شد');
+    onClose();
+  };
 
   return (
-    <FormModal
+    <Modal
       title={editing ? 'ویرایش گله' : 'ایجاد گله جدید'}
-      fields={fields}
-      initial={initial}
       onClose={onClose}
-      onChange={(name, value) => {
-        if (name === 'chickType') {
-          return { chickAge: CHICK_AGE_DEFAULT[String(value)] ?? 1 };
-        }
-      }}
-      onSubmit={(v) => {
-        const data: FormValues = {
-          ...v,
-          startCount: num(v.startCount),
-          chickAge: num(v.chickAge),
-        };
-        if (editing) actions.update('flocks', editing.id, asPatch<Flock>(data));
-        else actions.add('flocks', asNew<Flock>(data));
-        toast('گله ذخیره شد');
-      }}
-    />
+      footer={
+        <>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            انصراف
+          </button>
+          <button className="btn primary" type="button" onClick={save}>
+            {editing ? 'ذخیره تغییرات' : 'ثبت گله'}
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <div className="field full">
+          <label className="lbl">نام گله / دوره</label>
+          <input
+            className="input"
+            id="fld-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="گله ۳ — زمستان ۱۴۰۵"
+          />
+        </div>
+        <div className="field third">
+          <label className="lbl">کد</label>
+          <input className="input" value={code} onChange={(e) => setCode(e.target.value)} />
+        </div>
+        <div className="field third">
+          <label className="lbl">نژاد</label>
+          <input className="input" value={breed} onChange={(e) => setBreed(e.target.value)} />
+        </div>
+        <div className="field third">
+          <label className="lbl">سالن</label>
+          <input className="input" value={hall} onChange={(e) => setHall(e.target.value)} />
+        </div>
+
+        <Field
+          def={{
+            name: 'startDate',
+            label: 'تاریخ ورود به سالن',
+            type: 'date',
+            col: 'half',
+            required: true,
+          }}
+          values={{ startDate }}
+          setValue={(_n, v) => setStartDate(String(v))}
+        />
+        <div className="field half">
+          <label className="lbl">تعداد اولیه</label>
+          <input
+            className="input num"
+            inputMode="numeric"
+            id="fld-startCount"
+            value={startCount ? String(startCount) : ''}
+            onChange={(e) => setStartCount(num(e.target.value))}
+          />
+        </div>
+
+        <div className="field half">
+          <label className="lbl">نوع جوجه</label>
+          <select
+            className="input"
+            id="fld-chickType"
+            value={chickType}
+            onChange={(e) => {
+              setChickType(e.target.value);
+              setChickAge(CHICK_AGE_DEFAULT[e.target.value] ?? 1);
+            }}
+          >
+            {CHICK_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field half">
+          <label className="lbl">سن جوجه هنگام ورود (روز)</label>
+          <input
+            className="input num"
+            inputMode="numeric"
+            id="fld-chickAge"
+            value={chickAge ? String(chickAge) : ''}
+            onChange={(e) => setChickAge(num(e.target.value))}
+          />
+        </div>
+
+        <div className="field half">
+          <label className="lbl">وضعیت</label>
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as 'active' | 'closed')}
+          >
+            <option value="active">در حال پرورش</option>
+            <option value="closed">بسته شده</option>
+          </select>
+        </div>
+        {status === 'closed' ? (
+          <Field
+            def={{ name: 'endDate', label: 'تاریخ پایان', type: 'date', col: 'half' }}
+            values={{ endDate }}
+            setValue={(_n, v) => setEndDate(String(v))}
+          />
+        ) : null}
+
+        <div className="field full">
+          <label className="lbl">توضیحات</label>
+          <textarea
+            className="input"
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="sec-head" style={{ marginTop: 16 }}>
+        <div>
+          <h3>سهم شرکا در این دوره</h3>
+          <span className="sec-sub">
+            جمع: {n(total, 0)} {shareMode === 'unit' ? 'سهم' : '٪'}
+            {total > 0 ? ' — سهم هر نفر بر همین نسبت‌ها محاسبه می‌شود' : ''}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Chips
+            items={[
+              { value: 'unit', label: 'سهمی (۳ از ۹)' },
+              { value: 'percent', label: 'درصدی (٪)' },
+            ]}
+            active={shareMode}
+            onPick={(v) => setShareMode(v as 'unit' | 'percent')}
+          />
+        </div>
+      </div>
+
+      <div className="form-grid">
+        {rows.map((r, i) => {
+          const p = s.partners.find((x) => x.id === r.partnerId);
+          return (
+            <div className="field third" key={r.partnerId}>
+              <label className="lbl">
+                {p?.name || 'شریک'} {shareMode === 'unit' ? '— سهم' : '— درصد'}
+              </label>
+              <input
+                className="input num"
+                inputMode="numeric"
+                value={r.value ? String(r.value) : ''}
+                placeholder="۰"
+                onChange={(e) =>
+                  setRows((prev) =>
+                    prev.map((x, k) => (k === i ? { ...x, value: num(e.target.value) } : x)),
+                  )
+                }
+              />
+              <div className="hint">
+                {shareMode === 'unit'
+                  ? `${n(pctOf(r.value), 1)}٪ از کل`
+                  : `${n(pctOf(r.value), 1)}٪ از ${n(total, 0)}`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <button className="btn sm mt-sm" type="button" onClick={recallPartners}>
+        <Icon name="users" size={14} /> بازخوانی شرکا از «شرکا و تسویه»
+      </button>
+    </Modal>
   );
 }
 
-/* --------------------------------- انبار -------------------------------- */
 export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () => void }) {
   const s = useApp();
   const { toast } = useUI();
@@ -777,8 +944,8 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
   );
 }
 
-/** ورودی کوچک «افزودن مورد جدید» (دسته/واحد) */
-function AddInline({
+/** ورودی کوچک «افزودن مورد جدید» (دسته/واحد/نوع حساب) */
+export function AddInline({
   label,
   placeholder,
   onAdd,

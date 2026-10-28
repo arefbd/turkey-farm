@@ -135,6 +135,9 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   transfer: 'انتقال',
 };
 
+/* ------------------------------ انواع حساب ------------------------------ */
+export const ACCOUNT_KINDS = ['صندوق مشترک', 'بانک', 'جیب شریک'];
+
 /* --------------------------- دلایل حرکت انبار --------------------------- */
 export const STOCK_REASONS = [
   'خرید',

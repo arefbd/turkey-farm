@@ -2,11 +2,13 @@
 import { useMemo, useState } from 'react';
 import { FormModal, Field, type FieldDef, type FormValues } from '../components/Form';
 import { Modal, useUI } from '../components/Modal';
+import { AddInline } from './index';
 import { Icon } from '../components/Icon';
 import {
   actions,
   nextCode,
   num,
+  flockSharePercents,
   personById,
   personLabel,
   txStockDelta,
@@ -14,6 +16,7 @@ import {
   useApp,
 } from '../data/store';
 import {
+  ACCOUNT_KINDS,
   PAY_MODES,
   PAYMENT_METHODS,
   PERSON_TYPES,
@@ -25,7 +28,14 @@ import {
 import { today } from '../lib/jalali';
 import { splitAmount } from '../lib/money';
 import { money, n } from '../lib/format';
-import type { PaymentDoc, Person, Transaction, TxItem, TxShare } from '../data/types';
+import type {
+  Account,
+  PaymentDoc,
+  Person,
+  Transaction,
+  TxItem,
+  TxShare,
+} from '../data/types';
 
 /* --------------------------------- اشخاص -------------------------------- */
 export function PersonForm({ id, onClose }: { id?: string; onClose: () => void }) {
@@ -88,6 +98,74 @@ export function PersonForm({ id, onClose }: { id?: string; onClose: () => void }
   );
 }
 
+/* -------------------------------- حساب‌ها ------------------------------- */
+export function AccountForm({ id, onClose }: { id?: string; onClose: () => void }) {
+  const s = useApp();
+  const { toast } = useUI();
+  const editing = id ? s.accounts.find((a) => a.id === id) : null;
+
+  const kinds = Array.from(new Set([...ACCOUNT_KINDS, ...(s.settings.accountKinds || [])]));
+
+  const fields: FieldDef[] = [
+    { name: 'code', label: 'کد حساب', type: 'text', col: 'third', hint: 'خودکار' },
+    { name: 'kind', label: 'نوع حساب', type: 'select', required: true, col: 'third', options: kinds },
+    { name: 'active', label: 'حساب فعال است', type: 'checkbox', col: 'third' },
+    { name: 'name', label: 'نام حساب', type: 'text', required: true, col: 'half' },
+    {
+      name: 'partnerId',
+      label: 'شریک (برای جیب شریک)',
+      type: 'select',
+      col: 'half',
+      options: [{ value: '', label: '—' }].concat(
+        s.partners.map((p) => ({ value: p.id, label: p.name })),
+      ),
+      hint: (v) =>
+        v.kind === 'جیب شریک' ? 'برای جیب شریک، شریک مربوطه را انتخاب کنید' : undefined,
+    },
+    { name: 'opening', label: 'موجودی اولیه', type: 'money', col: 'half' },
+    { name: 'note', label: 'توضیحات', type: 'textarea', col: 'full' },
+  ];
+
+  return (
+    <FormModal
+      title={editing ? 'ویرایش حساب' : 'حساب جدید'}
+      fields={fields}
+      initial={
+        editing
+          ? { ...editing }
+          : {
+              code: nextCode('A', s.accounts.map((a) => a.code)),
+              kind: ACCOUNT_KINDS[0],
+              name: '',
+              opening: 0,
+              partnerId: '',
+              note: '',
+              active: true,
+            }
+      }
+      onClose={onClose}
+      extra={(_v, setValue) => (
+        <AddInline
+          label="نوع حساب جدید"
+          placeholder="مثلاً صندوق ارزی"
+          onAdd={(val) => {
+            actions.setSettings({
+              accountKinds: Array.from(new Set([...(s.settings.accountKinds || []), val])),
+            });
+            setValue('kind', val);
+          }}
+        />
+      )}
+      onSubmit={(v) => {
+        const data: FormValues = { ...v, opening: num(v.opening), active: v.active !== false };
+        if (editing) actions.update('accounts', editing.id, data as unknown as Partial<Account>);
+        else actions.add('accounts', data as unknown as Account);
+        toast('حساب ذخیره شد');
+      }}
+    />
+  );
+}
+
 /* -------------------------------- معامله -------------------------------- */
 interface TxRow extends TxItem {
   key: number;
@@ -140,6 +218,17 @@ export function TransactionForm({
 
   const total = txTotal(rows, discount, extraCost);
   const shareSum = s.partners.reduce((a, p) => a + num(shares[p.id]), 0);
+
+  const applyFlockShares = (fid: string) => {
+    const pct = flockSharePercents(s, fid);
+    if (!Object.keys(pct).length) return false;
+    const next: Record<string, number> = {};
+    s.partners.forEach((p) => {
+      next[p.id] = Math.round((pct[p.id] || 0) * 100) / 100;
+    });
+    setShares(next);
+    return true;
+  };
 
   const setRow = (key: number, patch: Partial<TxRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -337,7 +426,10 @@ export function TransactionForm({
             className="input"
             id="fld-flockId"
             value={flockId}
-            onChange={(e) => setFlockId(e.target.value)}
+            onChange={(e) => {
+              setFlockId(e.target.value);
+              if (e.target.value) applyFlockShares(e.target.value);
+            }}
           >
             <option value="">عمومی مزرعه</option>
             {s.flocks.map((f) => (
@@ -502,6 +594,20 @@ export function TransactionForm({
             جمع: {n(shareSum, 1)}٪ {Math.abs(shareSum - 100) > 0.5 ? '— بهتر است ۱۰۰ باشد' : ''}
           </span>
         </div>
+        <button
+          className="btn sm"
+          type="button"
+          onClick={() => {
+            if (!flockId) {
+              toast('اول دوره پرورش (گله) را انتخاب کنید', 'error');
+              return;
+            }
+            if (applyFlockShares(flockId)) toast('سهم‌ها از گله بازخوانی شد');
+            else toast('برای این گله سهمی تعریف نشده است', 'error');
+          }}
+        >
+          <Icon name="users" size={14} /> از گله
+        </button>
       </div>
       <div className="form-grid">
         {s.partners.map((p) => (
@@ -567,21 +673,15 @@ export function PaymentForm({
       ],
     },
     {
-      name: 'accountType',
+      name: 'accountId',
       label: 'حساب',
       type: 'select',
+      required: true,
       col: 'half',
-      options: [
-        { value: 'fund', label: 'صندوق مشترک' },
-        { value: 'partner', label: 'شخص (شریک)' },
-      ],
-    },
-    {
-      name: 'partnerId',
-      label: 'شریک حساب',
-      type: 'select',
-      col: 'half',
-      options: s.partners.map((p) => ({ value: p.id, label: p.name })),
+      options: s.accounts
+        .filter((a) => a.active !== false)
+        .map((a) => ({ value: a.id, label: `${a.name} (${a.kind})` })),
+      hint: 'حساب‌ها را از منوی «حساب‌ها» مدیریت کنید',
     },
     {
       name: 'payerId',
@@ -645,8 +745,9 @@ export function PaymentForm({
               code: nextCode('D', s.payments.map((p) => p.code)),
               date: today(),
               kind: presetKind || 'in',
+              accountId: s.accounts.find((a) => a.kind === 'صندوق مشترک')?.id || s.accounts[0]?.id || '',
               accountType: 'fund',
-              partnerId: s.partners[0]?.id || '',
+              partnerId: '',
               payerId: '',
               ownerId: '',
               personId: '',
@@ -658,7 +759,14 @@ export function PaymentForm({
       }
       onClose={onClose}
       onSubmit={(v) => {
-        const data: FormValues = { ...v, amount: num(v.amount) };
+        const acc = s.accounts.find((a) => a.id === String(v.accountId));
+        const isPocket = acc?.kind === 'جیب شریک' && !!acc?.partnerId;
+        const data: FormValues = {
+          ...v,
+          amount: num(v.amount),
+          accountType: isPocket ? 'partner' : 'fund',
+          partnerId: isPocket ? acc!.partnerId : '',
+        };
         if (editing) actions.update('payments', editing.id, data as Partial<PaymentDoc>);
         else actions.add('payments', data as unknown as PaymentDoc);
         toast('سند ثبت شد');

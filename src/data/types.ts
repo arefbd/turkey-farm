@@ -17,6 +17,8 @@ export interface Settings {
   chickWeightG: number;
   /** واحدهای قابل ویرایش — افزوده‌های کاربر */
   units: string[];
+  /** انواع حساب — افزوده‌های کاربر */
+  accountKinds: string[];
   /** دسته‌های کالای انبار — افزوده‌های کاربر */
   itemCats: string[];
 }
@@ -92,6 +94,8 @@ export interface PaymentDoc extends Base {
   ownerId: string;
   /** طرف حساب بیرونی */
   personId: string;
+  /** حساب مقصد/مبدأ از ماژول حساب‌ها */
+  accountId: string;
   amount: number;
   method: PaymentMethod;
   transactionId: string;
@@ -108,6 +112,14 @@ export interface Partner extends Base {
   joined: string;
 }
 
+export interface FlockShare {
+  partnerId: string;
+  /** سهم به واحد (مثلاً ۳ از ۹) */
+  units: number;
+  /** سهم درصدی */
+  percent: number;
+}
+
 export interface Flock extends Base {
   name: string;
   code: string;
@@ -122,6 +134,9 @@ export interface Flock extends Base {
   endDate: string;
   soldCount: number;
   notes: string;
+  /** میزان شراکت در این دوره */
+  shares: FlockShare[];
+  shareMode: 'unit' | 'percent';
 }
 
 export interface DailyRecord extends Base {
@@ -240,6 +255,33 @@ export interface Deal extends Base {
   note: string;
 }
 
+/* ------------------------------ حساب‌ها ------------------------------ */
+export interface Account extends Base {
+  code: string;
+  /** نوع حساب: صندوق مشترک / بانک / جیب شریک / نوع دلخواه */
+  kind: string;
+  name: string;
+  opening: number;
+  note: string;
+  /** اگر جیب شریک است، شناسه شریک */
+  partnerId: string;
+  active: boolean;
+}
+
+/* -------------------------- انتقال بین حساب‌ها -------------------------- */
+export interface Transfer extends Base {
+  code: string;
+  date: string;
+  /** مبدأ: صندوق مشترک یا دست شریک */
+  fromType: 'fund' | 'partner';
+  fromId: string;
+  toType: 'fund' | 'partner';
+  toId: string;
+  amount: number;
+  note: string;
+  locked: boolean;
+}
+
 /* ---------------------------- حرکات انبار ---------------------------- */
 export type StockMoveKind = 'in' | 'out';
 
@@ -276,6 +318,8 @@ export interface AppState {
   persons: Person[];
   transactions: Transaction[];
   payments: PaymentDoc[];
+  transfers: Transfer[];
+  accounts: Account[];
   stockMoves: StockMove[];
 }
 
@@ -295,6 +339,8 @@ export type CollectionKey =
   | 'persons'
   | 'transactions'
   | 'payments'
+  | 'transfers'
+  | 'accounts'
   | 'stockMoves';
 
 export interface FlockStats {

@@ -94,6 +94,24 @@ function normalize(s: AppState): AppState {
   }));
   next.transactions = (next.transactions || []).map((t) => ({ ...t, locked: !!t.locked }));
   next.payments = (next.payments || []).map((p) => ({ ...p, locked: !!p.locked }));
+  next.accounts = (next.accounts || []).map((a) => ({
+    ...a,
+    kind: a.kind || 'صندوق مشترک',
+    opening: num(a.opening),
+    partnerId: a.partnerId || '',
+    note: a.note || '',
+    active: a.active !== false,
+  }));
+  next.transfers = next.transfers || [];
+  next.flocks = (next.flocks || []).map((f) => ({
+    ...f,
+    shareMode: f.shareMode === 'percent' ? 'percent' : 'unit',
+    shares: (f.shares || []).map((x) => ({
+      partnerId: x.partnerId,
+      units: num(x.units),
+      percent: num(x.percent),
+    })),
+  }));
   next.persons = next.persons || [];
   next.transactions = next.transactions || [];
   next.payments = next.payments || [];
@@ -402,10 +420,16 @@ export function expenseShares(s: AppState, exp: Expense): Record<string, number>
       out[p.id] = p.id === exp.paidBy ? total : 0;
     });
   } else {
-    const t = totalShare(s) || 100;
-    partners.forEach((p) => {
-      out[p.id] = (total * num(p.share)) / t;
-    });
+    const t = totalShare(s);
+    if (t <= 0) {
+      partners.forEach((p) => {
+        out[p.id] = total / partners.length;
+      });
+    } else {
+      partners.forEach((p) => {
+        out[p.id] = (total * num(p.share)) / t;
+      });
+    }
   }
   return out;
 }
@@ -608,6 +632,47 @@ export function cashSeries(s: AppState, n = 6) {
       expense: list.filter((p) => p.kind === 'out').reduce((a, p) => a + num(p.amount), 0),
     };
   });
+}
+
+/* ------------------------------ حساب‌ها ------------------------------ */
+
+/** موجودی یک حساب: اولیه + دریافت‌ها − پرداخت‌ها ± انتقال‌ها */
+export function accountBalance(s: AppState, accountId: string): number {
+  const acc = s.accounts.find((a) => a.id === accountId);
+  if (!acc) return 0;
+  let bal = num(acc.opening);
+  s.payments.forEach((p) => {
+    if (p.accountId !== accountId) return;
+    bal += p.kind === 'in' ? num(p.amount) : -num(p.amount);
+  });
+  s.transfers.forEach((t) => {
+    if (t.toType !== 'fund' && t.toId === accountId) bal += num(t.amount);
+    if (t.fromType !== 'fund' && t.fromId === accountId) bal -= num(t.amount);
+    if (t.toType === 'fund' && acc.kind !== 'جیب شریک' && t.toId === accountId) bal += num(t.amount);
+    if (t.fromType === 'fund' && acc.kind !== 'جیب شریک' && t.fromId === accountId) bal -= num(t.amount);
+  });
+  return bal;
+}
+
+export function accountById(s: AppState, id: string) {
+  return s.accounts.find((a) => a.id === id) ?? null;
+}
+
+/** درصد سهم هر شریک در یک گله (از واحد یا درصد ذخیره‌شده) */
+export function flockSharePercents(s: AppState, flockId: string): Record<string, number> {
+  const f = s.flocks.find((x) => x.id === flockId);
+  if (!f || !f.shares?.length) return {};
+  const totalUnits = f.shares.reduce((a, x) => a + num(x.units), 0);
+  const totalPct = f.shares.reduce((a, x) => a + num(x.percent), 0);
+  const out: Record<string, number> = {};
+  f.shares.forEach((x) => {
+    if (f.shareMode === 'percent') {
+      out[x.partnerId] = totalPct > 0 ? (num(x.percent) / totalPct) * 100 : 0;
+    } else {
+      out[x.partnerId] = totalUnits > 0 ? (num(x.units) / totalUnits) * 100 : 0;
+    }
+  });
+  return out;
 }
 
 /** حرکات یک کالا، جدیدترین اول */
