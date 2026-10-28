@@ -16,10 +16,12 @@ import { CAT_MAP } from '../data/categories';
 import { format } from '../lib/jalali';
 import { money, n, pct, short } from '../lib/format';
 import { DailyForm, ExpenseForm, SaleForm, VaccineForm } from '../forms';
+import { FlockLedger } from './FlockLedger';
 
-type Tab = 'daily' | 'vaccine' | 'expense' | 'sale';
+type Tab = 'ledger' | 'daily' | 'vaccine' | 'expense' | 'sale';
 
 const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'ledger', label: 'حساب دوره' },
   { id: 'daily', label: 'ثبت روزانه' },
   { id: 'vaccine', label: 'واکسیناسیون' },
   { id: 'expense', label: 'هزینه‌ها' },
@@ -148,6 +150,8 @@ export function FlockDetail({ id }: { id: string }) {
       </div>
 
       <div className="card">
+        {tab === 'ledger' && <FlockLedger flockId={id} />}
+
         {tab === 'daily' && (
           <>
             <SectionHead
