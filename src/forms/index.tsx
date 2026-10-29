@@ -520,14 +520,6 @@ export function PartnerForm({ id, onClose }: { id?: string; onClose: () => void 
   const fields: FieldDef[] = [
     { name: 'name', label: 'نام و نام خانوادگی', type: 'text', required: true, col: 'half' },
     { name: 'phone', label: 'موبایل', type: 'text', col: 'half' },
-    {
-      name: 'share',
-      label: 'سهم (درصد)',
-      type: 'number',
-      required: true,
-      col: 'third',
-      hint: 'جمع سهم همه شرکا باید ۱۰۰ باشد',
-    },
     { name: 'role', label: 'نقش', type: 'text', col: 'third', placeholder: 'مدیر مالی، فنی ...' },
     { name: 'color', label: 'رنگ', type: 'select', col: 'third', options: PARTNER_COLORS },
     { name: 'joined', label: 'تاریخ عضویت', type: 'date', col: 'half' },
@@ -642,6 +634,19 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
 
   const total = rows.reduce((a, r) => a + num(r.value), 0);
   const pctOf = (v: number) => (total > 0 ? (num(v) / total) * 100 : 0);
+
+  const switchMode = (next: 'unit' | 'percent') => {
+    if (next === shareMode) return;
+    setRows((prev) => {
+      const tot = prev.reduce((a, r) => a + num(r.value), 0);
+      if (tot <= 0) return prev;
+      return prev.map((r) => ({
+        ...r,
+        value: Math.round((num(r.value) / tot) * 10000) / 100,
+      }));
+    });
+    setShareMode(next);
+  };
 
   const recallPartners = () => {
     const existing = new Map(rows.map((r) => [r.partnerId, r.value]));
@@ -806,7 +811,7 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
 
       <div className="sec-head" style={{ marginTop: 16 }}>
         <div>
-          <h3>سهم شرکا در این دوره</h3>
+          <h3>میزان شراکت</h3>
           <span className="sec-sub">
             جمع: {n(total, 0)} {shareMode === 'unit' ? 'سهم' : '٪'}
             {total > 0 ? ' — سهم هر نفر بر همین نسبت‌ها محاسبه می‌شود' : ''}
@@ -819,7 +824,7 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
               { value: 'percent', label: 'درصدی (٪)' },
             ]}
             active={shareMode}
-            onPick={(v) => setShareMode(v as 'unit' | 'percent')}
+            onPick={(v) => switchMode(v as 'unit' | 'percent')}
           />
         </div>
       </div>

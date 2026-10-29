@@ -208,6 +208,11 @@ export function TransactionForm({
       (i, k) => ({ ...i, key: k }),
     ),
   );
+  const [shareIds, setShareIds] = useState<string[]>(() => {
+    if (editing?.shares?.length) return editing.shares.map((x) => x.partnerId);
+    return s.partners.map((p) => p.id);
+  });
+  const [addId, setAddId] = useState('');
   const [shares, setShares] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     s.partners.forEach((p) => {
@@ -218,7 +223,8 @@ export function TransactionForm({
   });
 
   const total = txTotal(rows, discount, extraCost);
-  const shareSum = s.partners.reduce((a, p) => a + num(shares[p.id]), 0);
+  const pickedPartners = s.partners.filter((p) => shareIds.includes(p.id));
+  const shareSum = pickedPartners.reduce((a, p) => a + num(shares[p.id]), 0);
 
   const applyFlockShares = (fid: string) => {
     const pct = flockSharePercents(s, fid);
@@ -228,6 +234,7 @@ export function TransactionForm({
       next[p.id] = Math.round((pct[p.id] || 0) * 100) / 100;
     });
     setShares(next);
+    setShareIds(s.partners.filter((p) => (pct[p.id] || 0) > 0).map((p) => p.id));
     return true;
   };
 
@@ -247,9 +254,9 @@ export function TransactionForm({
     // تخصیص دقیق: جمع سهم‌ها همیشه برابر مبلغ کل است
     const amounts = splitAmount(
       finalTotal,
-      s.partners.map((p) => num(shares[p.id])),
+      pickedPartners.map((p) => num(shares[p.id])),
     );
-    const txShares: TxShare[] = s.partners.map((p, i) => ({
+    const txShares: TxShare[] = pickedPartners.map((p, i) => ({
       partnerId: p.id,
       percent: num(shares[p.id]),
       amount: amounts[i] || 0,
@@ -611,9 +618,19 @@ export function TransactionForm({
         </button>
       </div>
       <div className="form-grid">
-        {s.partners.map((p) => (
+        {pickedPartners.map((p) => (
           <div className="field third" key={p.id}>
-            <label className="lbl">{p.name}</label>
+            <label className="lbl" style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>{p.name}</span>
+              <button
+                className="icon-btn sm"
+                type="button"
+                title="حذف این شریک از معامله"
+                onClick={() => setShareIds((prev) => prev.filter((x) => x !== p.id))}
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </label>
             <input
               className="input num"
               type="number"
@@ -621,21 +638,51 @@ export function TransactionForm({
               max={100}
               step={0.1}
               value={shares[p.id] ?? 0}
-              onChange={(e) =>
-                setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
-              }
+              onChange={(e) => setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))}
             />
             <div className="hint">
               {money(
                 splitAmount(
                   total,
-                  s.partners.map((x) => num(shares[x.id])),
-                )[s.partners.indexOf(p)] || 0,
+                  pickedPartners.map((x) => num(shares[x.id])),
+                )[pickedPartners.indexOf(p)] || 0,
               )}
             </div>
           </div>
         ))}
       </div>
+
+      {s.partners.some((p) => !shareIds.includes(p.id)) ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <select
+            className="input"
+            style={{ maxWidth: 220 }}
+            value={addId}
+            onChange={(e) => setAddId(e.target.value)}
+          >
+            <option value="">افزودن شریک…</option>
+            {s.partners
+              .filter((p) => !shareIds.includes(p.id))
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+          <button
+            className="btn sm"
+            type="button"
+            onClick={() => {
+              if (!addId) return;
+              setShareIds((prev) => [...prev, addId]);
+              setShares((prev) => ({ ...prev, [addId]: prev[addId] ?? 0 }));
+              setAddId('');
+            }}
+          >
+            <Icon name="plus" size={14} /> افزودن
+          </button>
+        </div>
+      ) : null}
 
       <div className="field full mt-sm">
         <label className="lbl">توضیحات</label>
