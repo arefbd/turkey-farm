@@ -175,10 +175,12 @@ interface TxRow extends TxItem {
 export function TransactionForm({
   id,
   presetType,
+  presetFlockId,
   onClose,
 }: {
   id?: string;
   presetType?: string;
+  presetFlockId?: string;
   onClose: () => void;
 }) {
   const s = useApp();
@@ -198,7 +200,7 @@ export function TransactionForm({
   const [dueDate, setDueDate] = useState(editing?.dueDate || '');
   const [deposit, setDeposit] = useState(num(editing?.deposit));
   const [hall, setHall] = useState(editing?.hall || '');
-  const [flockId, setFlockId] = useState(editing?.flockId || '');
+  const [flockId, setFlockId] = useState(editing?.flockId || presetFlockId || '');
   const [warehouse, setWarehouse] = useState(editing?.warehouse || WAREHOUSES[0]);
   const [note, setNote] = useState(editing?.note || '');
   const [discount, setDiscount] = useState(num(editing?.discount));
@@ -209,15 +211,23 @@ export function TransactionForm({
     ),
   );
   const [shareIds, setShareIds] = useState<string[]>(() => {
+    if (presetFlockId && !editing) {
+      const pct = flockSharePercents(s, presetFlockId);
+      const ids = s.partners.filter((p) => (pct[p.id] || 0) > 0).map((p) => p.id);
+      if (ids.length) return ids;
+    }
     if (editing?.shares?.length) return editing.shares.map((x) => x.partnerId);
     return s.partners.map((p) => p.id);
   });
   const [addId, setAddId] = useState('');
   const [shares, setShares] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
+    const flockPct = presetFlockId && !editing ? flockSharePercents(s, presetFlockId) : null;
     s.partners.forEach((p) => {
       const found = editing?.shares?.find((x) => x.partnerId === p.id);
-      init[p.id] = found ? found.percent : num(p.share);
+      if (found) init[p.id] = found.percent;
+      else if (flockPct && (flockPct[p.id] || 0) > 0) init[p.id] = Math.round(flockPct[p.id] * 100) / 100;
+      else init[p.id] = num(p.share);
     });
     return init;
   });

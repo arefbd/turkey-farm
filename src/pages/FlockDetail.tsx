@@ -12,10 +12,11 @@ import {
   partnerName,
   useApp,
 } from '../data/store';
-import { CAT_MAP } from '../data/categories';
+import { CAT_MAP, TX_TYPE_LABEL } from '../data/categories';
 import { format } from '../lib/jalali';
 import { money, n, pct, short } from '../lib/format';
-import { DailyForm, ExpenseForm, SaleForm, VaccineForm } from '../forms';
+import { DailyForm, ExpenseForm, VaccineForm } from '../forms';
+import { TransactionForm } from '../forms/crm';
 import { FlockLedger } from './FlockLedger';
 
 type Tab = 'ledger' | 'daily' | 'vaccine' | 'expense' | 'sale';
@@ -50,6 +51,9 @@ export function FlockDetail({ id }: { id: string }) {
   const weights = recs.filter((r) => num(r.avgWeightG) > 0);
   const expenses = s.expenses
     .filter((e) => e.flockId === id)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const saleTx = s.transactions
+    .filter((t) => t.flockId === id && (t.type === 'sale' || t.type === 'sale_return'))
     .sort((a, b) => b.date.localeCompare(a.date));
   const sales = s.sales
     .filter((x) => x.flockId === id)
@@ -318,31 +322,40 @@ export function FlockDetail({ id }: { id: string }) {
           <>
             <SectionHead
               title="فروش این گله"
-              sub={'جمع: ' + money(st.revenue, s.settings.currency)}
+              sub={'جمع فروش دوره: ' + money(st.revenue, s.settings.currency)}
               action={
                 <button
                   className="btn sm primary"
-                  onClick={() => ui.open(<SaleForm onClose={ui.close} />)}
+                  onClick={() =>
+                    ui.open(
+                      <TransactionForm presetType="sale" presetFlockId={id} onClose={ui.close} />,
+                    )
+                  }
                 >
-                  <Icon name="plus" size={14} /> ثبت
+                  <Icon name="plus" size={14} /> ثبت فروش
                 </button>
               }
             />
-            {sales.length ? (
+            {saleTx.length ? (
               <div className="rows">
-                {sales.map((x) => (
+                {saleTx.map((t) => (
                   <Row
-                    key={x.id}
+                    key={t.id}
                     icon="🍗"
-                    iconBg="#ECFDF5"
-                    title={`${x.type} — ${n(x.qtyKg)} کیلو`}
-                    sub={`${format(x.date, 'long')} · ${x.buyer || '—'} · کیلویی ${n(x.pricePerKg)}`}
-                    amount={n(x.amount)}
-                    amountTone="pos"
+                    iconBg={t.type === 'sale' ? '#ECFDF5' : '#FEF2F2'}
+                    title={`${TX_TYPE_LABEL[t.type]} · ${t.personName || '—'}`}
+                    sub={
+                      `${t.code} · ${format(t.date, 'long')} · ` +
+                      (t.items || []).map((x) => x.name).join('، ')
+                    }
+                    amount={n(t.total)}
+                    amountTone={t.type === 'sale' ? 'pos' : 'neg'}
                     actions={
                       <button
                         className="icon-btn sm"
-                        onClick={() => ui.open(<SaleForm id={x.id} onClose={ui.close} />)}
+                        onClick={() =>
+                          ui.open(<TransactionForm id={t.id} onClose={ui.close} />)
+                        }
                       >
                         <Icon name="edit" size={15} />
                       </button>
@@ -351,8 +364,31 @@ export function FlockDetail({ id }: { id: string }) {
                 ))}
               </div>
             ) : (
-              <Empty title="فروشی ثبت نشده" />
+              <Empty
+                title="فروشی ثبت نشده"
+                text="با دکمه «ثبت فروش»، معامله فروش این گله را ثبت کنید"
+              />
             )}
+
+            {sales.length ? (
+              <>
+                <div className="hint" style={{ marginTop: 14 }}>
+                  فروش‌های ثبت‌شده در نسخه قبلی (فقط نمایش، در جمع درآمد لحاظ شده‌اند):
+                </div>
+                <div className="rows">
+                  {sales.map((x) => (
+                    <Row
+                      key={x.id}
+                      icon="🗂"
+                      iconBg="#F4F4F5"
+                      title={`${x.type} — ${n(x.qtyKg)} کیلو`}
+                      sub={`${format(x.date, 'long')} · ${x.buyer || '—'}`}
+                      amount={n(x.amount)}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : null}
           </>
         )}
       </div>

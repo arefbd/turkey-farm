@@ -15,6 +15,7 @@ import { Transactions } from './pages/Transactions';
 import { Payments } from './pages/Payments';
 import { Persons } from './pages/Persons';
 import { Accounts } from './pages/Accounts';
+import { TransactionForm } from './forms/crm';
 import { Partners } from './pages/Partners';
 import { Feed } from './pages/Feed';
 import { Inventory } from './pages/Inventory';
@@ -25,7 +26,6 @@ import {
   DailyForm,
   ExpenseForm,
   PartnerForm,
-  SaleForm,
   TaskForm,
   VaccineForm,
 } from './forms';
@@ -149,7 +149,7 @@ export function App() {
       ],
       onPick: (act) => {
         if (act === 'expense') ui.open(<ExpenseForm onClose={ui.close} />);
-        if (act === 'sale') ui.open(<SaleForm onClose={ui.close} />);
+        if (act === 'sale') ui.open(<TransactionForm presetType="sale" onClose={ui.close} />);
         if (act === 'daily') ui.open(<DailyForm onClose={ui.close} />);
         if (act === 'vaccine') ui.open(<VaccineForm onClose={ui.close} />);
         if (act === 'task') ui.open(<TaskForm onClose={ui.close} />);

@@ -16,7 +16,8 @@ import {
 } from '../data/store';
 import { format, today } from '../lib/jalali';
 import { n, pct, short } from '../lib/format';
-import { DailyForm, ExpenseForm, SaleForm, VaccineForm } from '../forms';
+import { DailyForm, ExpenseForm, VaccineForm } from '../forms';
+import { TransactionForm } from '../forms/crm';
 
 export function Dashboard() {
   const s = useApp();
@@ -38,7 +39,7 @@ export function Dashboard() {
   const cycleDays = s.settings.cycleDays || 120;
 
   const openExpense = () => ui.open(<ExpenseForm onClose={ui.close} />);
-  const openSale = () => ui.open(<SaleForm onClose={ui.close} />);
+  const openSale = () => ui.open(<TransactionForm presetType="sale" onClose={ui.close} />);
   const openDaily = () => ui.open(<DailyForm onClose={ui.close} />);
   const openVaccine = () => ui.open(<VaccineForm onClose={ui.close} />);
 
