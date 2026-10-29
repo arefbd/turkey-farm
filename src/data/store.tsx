@@ -208,7 +208,9 @@ export async function hydrate(uid: string) {
   try {
     const { records, settings } = await fetchAll();
     const assembled = assemble(records, settings, blank().settings);
-    state = { ...blank(), ...assembled, version: 2 };
+    // normalize: رکوردهای قدیمیِ بدون فیلدهای جدید (expiry، locked، shares، accountId)
+    // را با مقادیر پیش‌فرض سالم می‌کند
+    state = normalize({ ...blank(), ...assembled, version: 2 });
     synced = state;
     setFaDigits(state.settings.persianDigits !== false);
     setSync({ status: 'ready', error: '' });
