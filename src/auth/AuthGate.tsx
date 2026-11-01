@@ -176,6 +176,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -186,7 +187,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (!s) detach();
+      if (!s) {
+        detach();
+        setHasLoadedOnce(false);
+      }
     });
     return () => {
       alive = false;
@@ -197,26 +201,81 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const uid = session?.user?.id;
 
   useEffect(() => {
-    if (uid) void hydrate(uid);
+    if (uid) {
+      void hydrate(uid).then(() => {
+        setHasLoadedOnce(true);
+      });
+    }
   }, [uid]);
 
   if (!checked) return <Splash text="در حال اتصال…" />;
   if (!session) return <AuthScreen />;
-  if (sync.status === 'loading') return <Splash text="در حال خواندن داده‌ها از Supabase…" />;
 
-  if (sync.status === 'error') {
+  // فقط در لود اولیه اگر داده‌ها در حال خواندن است
+  if (sync.status === 'loading' && !hasLoadedOnce) {
+    return <Splash text="در حال خواندن داده‌ها از Supabase…" />;
+  }
+
+  // فقط در لود اولیه اگر ارتباط برقرار نشد
+  if (sync.status === 'error' && !hasLoadedOnce) {
     return (
       <ErrorScreen
         message={sync.error}
         onRetry={() => {
           setRetrying(true);
-          void resync().finally(() => setRetrying(false));
+          void hydrate(uid!).finally(() => setRetrying(false));
         }}
       />
     );
   }
 
-  if (retrying) return <Splash text="در حال همگام‌سازی مجدد…" />;
+  if (retrying && !hasLoadedOnce) return <Splash text="در حال همگام‌سازی مجدد…" />;
 
-  return <>{children}</>;
+  return (
+    <>
+      {sync.status === 'error' && (
+        <div
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 9999,
+            background: '#FEF2F2',
+            borderBottom: '1px solid #FCA5A5',
+            color: '#991B1B',
+            padding: '8px 14px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+            <span>⚠️</span>
+            <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+              خطا در ذخیره‌سازی در سرور: {sync.error}
+            </span>
+          </div>
+          <button
+            className="btn sm"
+            style={{
+              background: '#DC2626',
+              color: '#fff',
+              border: 'none',
+              padding: '4px 10px',
+              fontSize: '11.5px',
+              whiteSpace: 'nowrap',
+            }}
+            onClick={() => {
+              setRetrying(true);
+              void resync().finally(() => setRetrying(false));
+            }}
+          >
+            {retrying ? 'در حال ارسال…' : 'تلاش مجدد'}
+          </button>
+        </div>
+      )}
+      {children}
+    </>
+  );
 }

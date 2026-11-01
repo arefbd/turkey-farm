@@ -19,6 +19,7 @@ import { TransactionForm } from './forms/crm';
 import { Partners } from './pages/Partners';
 import { Feed } from './pages/Feed';
 import { Inventory } from './pages/Inventory';
+import { Products } from './pages/Products';
 import { Tasks } from './pages/Tasks';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
@@ -26,6 +27,7 @@ import {
   DailyForm,
   ExpenseForm,
   PartnerForm,
+  ProductForm,
   TaskForm,
   VaccineForm,
 } from './forms';
@@ -46,8 +48,9 @@ export const NAV: NavItem[] = [
   { id: 'payments', label: 'دریافت‌ها و پرداخت‌ها', icon: 'exchange', group: 'مالی' },
   { id: 'persons', label: 'اشخاص (مشتری/تامین‌کننده)', icon: 'users', group: 'مالی' },
   { id: 'partners', label: 'شرکا و تسویه', icon: 'scale', group: 'مالی' },
-  { id: 'feed', label: 'خوراک و فرمول', icon: 'feed', group: 'عملیات' },
+  { id: 'products', label: 'کالاها و محصولات', icon: 'tag', group: 'عملیات' },
   { id: 'inventory', label: 'انبار', icon: 'box', group: 'عملیات' },
+  { id: 'feed', label: 'خوراک و فرمول', icon: 'feed', group: 'عملیات' },
   { id: 'tasks', label: 'کارها و یادآور', icon: 'check', group: 'عملیات' },
   { id: 'reports', label: 'گزارش‌ها', icon: 'chart', group: 'تحلیل' },
   { id: 'settings', label: 'تنظیمات', icon: 'gear', group: 'تحلیل' },
@@ -96,6 +99,8 @@ function Page({ name, param }: { name: string; param: string }) {
       return <Partners />;
     case 'feed':
       return <Feed />;
+    case 'products':
+      return <Products />;
     case 'inventory':
       return <Inventory />;
     case 'tasks':
@@ -142,6 +147,7 @@ export function App() {
       items: [
         { act: 'expense', label: 'ثبت هزینه', icon: '💸' },
         { act: 'sale', label: 'ثبت فروش', icon: '🍗' },
+        { act: 'product', label: 'کالا و محصول جدید', icon: '🏷️' },
         { act: 'daily', label: 'ثبت روزانه گله', icon: '📝' },
         { act: 'vaccine', label: 'واکسیناسیون', icon: '💉' },
         { act: 'task', label: 'کار / یادآور', icon: '🔔' },
@@ -150,6 +156,7 @@ export function App() {
       onPick: (act) => {
         if (act === 'expense') ui.open(<ExpenseForm onClose={ui.close} />);
         if (act === 'sale') ui.open(<TransactionForm presetType="sale" onClose={ui.close} />);
+        if (act === 'product') ui.open(<ProductForm onClose={ui.close} />);
         if (act === 'daily') ui.open(<DailyForm onClose={ui.close} />);
         if (act === 'vaccine') ui.open(<VaccineForm onClose={ui.close} />);
         if (act === 'task') ui.open(<TaskForm onClose={ui.close} />);

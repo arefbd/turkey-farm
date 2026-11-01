@@ -11,7 +11,9 @@ create table if not exists public.tf_records (
                           references auth.users (id) on delete cascade,
   kind        text        not null check (kind in (
                 'partners','flocks','daily','expenses','sales','formulas',
-                'batches','tasks','vaccines','inventory','contributions','deals')),
+                'batches','tasks','vaccines','inventory','contributions','deals',
+                'persons','transactions','payments','transfers','accounts','stockMoves',
+                'products')),
   data        jsonb       not null default '{}'::jsonb,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()

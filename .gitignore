@@ -33,3 +33,5 @@ logs/
 
 # Backups / local data
 turkey-farm-backup*.json
+
+backups/

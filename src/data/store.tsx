@@ -9,15 +9,13 @@
 import { useSyncExternalStore } from 'react';
 import * as J from '../lib/jalali';
 import { setFaDigits } from '../lib/jalali';
-import { blank, seed, uid } from './seed';
+import { blank, DEFAULT_PRODUCTS, seed, uid } from './seed';
 import { CAT_MAP, GOODS_CATS } from './categories';
 import {
   COLLECTIONS,
   assemble,
-  deleteAllRecords,
   deleteRecords,
   fetchAll,
-  insertRecords,
   saveSettings,
   upsertRecord,
 } from './remote';
@@ -33,6 +31,7 @@ import type {
   FlockStats,
   Formula,
   Person,
+  Product,
   Settlement,
   StockMove,
   Settings,
@@ -116,6 +115,15 @@ function normalize(s: AppState): AppState {
   next.transactions = next.transactions || [];
   next.payments = next.payments || [];
   next.stockMoves = next.stockMoves || [];
+  next.products = (next.products || []).map((p) => ({
+    ...p,
+    code: p.code || '',
+    name: String(p.name || '').trim(),
+    category: String(p.category || 'عمومی').trim(),
+    unit: String(p.unit || 'کیلوگرم').trim(),
+    defaultPrice: num(p.defaultPrice),
+    active: p.active !== false,
+  }));
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
 }
@@ -202,15 +210,23 @@ function persist() {
 }
 
 /** بارگذاری داده‌های کاربر از Supabase */
-export async function hydrate(uid: string) {
-  userId = uid;
-  setSync({ userId: uid, status: 'loading', error: '' });
+export async function hydrate(targetUserId: string) {
+  userId = targetUserId;
+  setSync({ userId: targetUserId, status: 'loading', error: '' });
   try {
     const { records, settings } = await fetchAll();
     const assembled = assemble(records, settings, blank().settings);
+    const initialProds = (!assembled.products || (assembled.products as unknown[]).length === 0)
+      ? DEFAULT_PRODUCTS.map((p) => ({ ...p, id: uid(), createdAt: Date.now() }))
+      : [];
     // normalize: رکوردهای قدیمیِ بدون فیلدهای جدید (expiry، locked، shares، accountId)
     // را با مقادیر پیش‌فرض سالم می‌کند
-    state = normalize({ ...blank(), ...assembled, version: 2 });
+    state = normalize({
+      ...blank(),
+      ...assembled,
+      products: ((assembled.products as unknown[])?.length ? assembled.products : initialProds) as Product[],
+      version: 2,
+    });
     synced = state;
     setFaDigits(state.settings.persianDigits !== false);
     setSync({ status: 'ready', error: '' });
@@ -228,15 +244,16 @@ export function detach() {
   setSync({ userId: null, status: 'loading', error: '', pending: 0 });
 }
 
-/** بازفرست کامل وضعیت به سرور (برای بازیابی پس از خطا) */
+/** بازفرست وضعیت به سرور به صورت ایمن (بدون حذف داده‌های سرور) */
 export async function resync() {
   if (!userId) return;
   setSync({ status: 'loading', error: '' });
   try {
-    await deleteAllRecords(userId);
     for (const col of COLLECTIONS) {
       const rows = state[col] as unknown as Array<Record<string, unknown>>;
-      if (rows.length) await insertRecords(col, rows);
+      if (rows.length) {
+        await Promise.all(rows.map((r) => upsertRecord(col, r)));
+      }
     }
     await saveSettings(userId, state.settings);
     synced = state;
@@ -377,6 +394,23 @@ export const actions = {
 const byDateAsc = (a: { date: string }, b: { date: string }) => J.jdn(a.date) - J.jdn(b.date);
 const byDateDesc = (a: { date: string }, b: { date: string }) => J.jdn(b.date) - J.jdn(a.date);
 
+/* --------------------------- کالاها و محصولات --------------------------- */
+export function productById(s: AppState, id: string): Product | null {
+  return s.products.find((p) => p.id === id) ?? null;
+}
+
+export function activeProducts(s: AppState): Product[] {
+  return s.products.filter((p) => p.active !== false);
+}
+
+export function productCategories(s: AppState): string[] {
+  const cats = new Set<string>();
+  s.products.forEach((p) => {
+    if (p.category) cats.add(p.category.trim());
+  });
+  return Array.from(cats);
+}
+
 export function flockById(s: AppState, id: string) {
   return s.flocks.find((f) => f.id === id) ?? null;
 }
@@ -402,7 +436,7 @@ export function totalShare(s: AppState): number {
   return sum(s.partners, 'share');
 }
 
-/** سهم هر شریک از یک هزینه */
+/** سهم هر شریک از یک هزینه (پشتیبانی از درصدی و نسبتی/سهمی) */
 export function expenseShares(s: AppState, exp: Expense): Record<string, number> {
   const partners = s.partners;
   const total = num(exp.amount);
@@ -410,9 +444,17 @@ export function expenseShares(s: AppState, exp: Expense): Record<string, number>
   if (!partners.length) return out;
 
   if (exp.split === 'custom' && exp.shares) {
-    partners.forEach((p) => {
-      out[p.id] = (total * num(exp.shares?.[p.id])) / 100;
-    });
+    if (exp.shareMode === 'unit') {
+      const sumUnits = partners.reduce((a, p) => a + num(exp.shares?.[p.id]), 0);
+      partners.forEach((p) => {
+        out[p.id] = sumUnits > 0 ? (total * num(exp.shares?.[p.id])) / sumUnits : 0;
+      });
+    } else {
+      const sumPct = partners.reduce((a, p) => a + num(exp.shares?.[p.id]), 0);
+      partners.forEach((p) => {
+        out[p.id] = sumPct > 0 ? (total * num(exp.shares?.[p.id])) / sumPct : 0;
+      });
+    }
   } else if (exp.split === 'equal') {
     partners.forEach((p) => {
       out[p.id] = total / partners.length;
@@ -522,16 +564,52 @@ export function sumTransactions(list: Transaction[]): TxSums {
   };
 }
 
-/** تعداد فروش‌رفته یک گله — محاسبه خودکار از معاملات فروش */
-export function soldCountForFlock(s: AppState, flockId: string): number {
-  let n = 0;
+/** تعداد فروش‌رفته و وزن فروخته‌شده یک گله — محاسبه خودکار از معاملات و فروش‌ها */
+export function soldForFlock(
+  s: AppState,
+  flockId: string,
+  flockAvgWeightG = 0,
+): { count: number; weightKg: number } {
+  let count = 0;
+  let weightKg = 0;
+  const avgW =
+    flockAvgWeightG > 0
+      ? flockAvgWeightG
+      : num(s.settings.targetWeightG) > 0
+        ? num(s.settings.targetWeightG)
+        : 8000;
+
   s.transactions.forEach((t) => {
     if (t.flockId !== flockId) return;
-    const qty = (t.items || []).reduce((a, i) => a + num(i.qty), 0);
-    if (t.type === 'sale') n += qty;
-    else if (t.type === 'sale_return') n -= qty;
+    const sign = t.type === 'sale' ? 1 : t.type === 'sale_return' ? -1 : 0;
+    if (!sign) return;
+
+    (t.items || []).forEach((i) => {
+      const q = num(i.qty);
+      const u = (i.unit || '').trim();
+      const isCount = u === 'قطعه' || u === 'عدد' || u === 'رأس' || u === 'راس';
+      const isTon = u === 'تن';
+
+      if (isCount) {
+        count += sign * q;
+        weightKg += sign * (q * avgW) / 1000;
+      } else {
+        const itemKg = isTon ? q * 1000 : q;
+        weightKg += sign * itemKg;
+        count += sign * Math.round((itemKg * 1000) / avgW);
+      }
+    });
   });
-  return Math.max(0, Math.round(n));
+
+  return {
+    count: Math.max(0, Math.round(count)),
+    weightKg: Math.max(0, weightKg),
+  };
+}
+
+/** تعداد فروش‌رفته یک گله — سازگاری با توابع قبلی */
+export function soldCountForFlock(s: AppState, flockId: string): number {
+  return soldForFlock(s, flockId).count;
 }
 
 /* ---------------------- جریان نقدی و مطالبات ---------------------- */
@@ -748,11 +826,13 @@ export function monthlySeries(s: AppState, n = 6) {
   return J.lastMonths(n).map((m) => {
     const e = s.expenses.filter((x) => x.date.slice(0, 7) === m.key);
     const sa = s.sales.filter((x) => x.date.slice(0, 7) === m.key);
+    const txs = s.transactions.filter((t) => t.date.slice(0, 7) === m.key);
+    const tx = sumTransactions(txs);
     return {
       key: m.key,
       label: m.label,
-      expense: sum(e, 'amount'),
-      income: sum(sa, 'amount'),
+      expense: sum(e, 'amount') + tx.purchase,
+      income: sum(sa, 'amount') + tx.revenue,
     };
   });
 }
@@ -817,12 +897,25 @@ export function flockStats(s: AppState, id: string): FlockStats | null {
     }
   });
 
-  const sold = num(f.soldCount) + soldCountForFlock(s, id);
+  const soldInfo = soldForFlock(s, id, lastW);
+  const sold = num(f.soldCount) + soldInfo.count;
   const alive = Math.max(0, num(f.startCount) - mort - culled - sold);
   const end = f.endDate || J.today();
   const age = Math.max(0, J.diff(f.startDate, end)) + num(f.chickAge);
+
+  // بیومس پرندگان زنده فعلی در سالن
   const biomass = (alive * lastW) / 1000;
-  const gainKg = biomass - num(f.startCount) * 0.06;
+  // وزن پرندگان فروخته شده (از معاملات و فروش‌های سنتی)
+  const legacySalesKg = sum(s.sales.filter((x) => x.flockId === id), 'qtyKg');
+  const soldBiomass = soldInfo.weightKg + legacySalesKg;
+  // کل زیست‌توده تولید شده دوره (پرندگان موجود + پرندگان فروخته شده)
+  const totalProducedKg = biomass + soldBiomass;
+
+  // وزن اولیه جوجه‌های ورودی به سالن با استفاده از تنظیمات مزرعه
+  const chickWeightKg = (num(s.settings.chickWeightG) || 60) / 1000;
+  const initialBiomass = num(f.startCount) * chickWeightKg;
+  const gainKg = Math.max(0, totalProducedKg - initialBiomass);
+
   const tx = sumTransactions(s.transactions.filter((t) => t.flockId === id));
   const exp = sum(s.expenses.filter((e) => e.flockId === id), 'amount') + tx.purchase;
   const rev = sum(s.sales.filter((x) => x.flockId === id), 'amount') + tx.revenue;
@@ -846,7 +939,7 @@ export function flockStats(s: AppState, id: string): FlockStats | null {
     expenses: exp,
     revenue: rev,
     profit: rev - exp,
-    costPerKg: biomass > 0 ? exp / biomass : 0,
+    costPerKg: totalProducedKg > 0 ? exp / totalProducedKg : biomass > 0 ? exp / biomass : 0,
     feedPerBird: alive ? feed / alive : 0,
   };
 }

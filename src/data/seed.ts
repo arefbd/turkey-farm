@@ -11,6 +11,7 @@ import type {
   Formula,
   InventoryItem,
   Partner,
+  Product,
   Sale,
   Settings,
   Task,
@@ -38,6 +39,43 @@ export function uid(): string {
   return 'x' + Date.now().toString(36) + seq.toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+export const DEFAULT_PRODUCTS: Array<Omit<Product, 'id' | 'createdAt'>> = [
+  // دسته جوجه
+  { code: 'PRD-101', category: 'جوجه', name: 'یک روزه', unit: 'قطعه', defaultPrice: 0, active: true },
+  { code: 'PRD-102', category: 'جوجه', name: 'چند روزه', unit: 'قطعه', defaultPrice: 0, active: true },
+  { code: 'PRD-103', category: 'جوجه', name: 'نیمچه', unit: 'قطعه', defaultPrice: 0, active: true },
+
+  // دسته گوشت
+  { code: 'PRD-201', category: 'گوشت', name: 'منجمد', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-202', category: 'گوشت', name: 'گرم', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-203', category: 'گوشت', name: 'لاشه', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-204', category: 'گوشت', name: 'شقه', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-205', category: 'گوشت', name: 'سینه با پوست', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-206', category: 'گوشت', name: 'ران با پوست', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-207', category: 'گوشت', name: 'بال و گردن', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-208', category: 'گوشت', name: 'پاچین', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-209', category: 'گوشت', name: 'جگر', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-210', category: 'گوشت', name: 'دل', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-211', category: 'گوشت', name: 'سنگدان', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-212', category: 'گوشت', name: 'سینه بدون پوست', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-213', category: 'گوشت', name: 'ران بدون پوست', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-214', category: 'گوشت', name: 'شنیسل', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-215', category: 'گوشت', name: 'سینه با بال و گردن', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-216', category: 'گوشت', name: 'ران با بال و گردن', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+
+  // خوراک و دان
+  { code: 'PRD-301', category: 'دان و خوراک', name: 'پیش‌دان (سوپر استارتر)', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-302', category: 'دان و خوراک', name: 'میان‌دان', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-303', category: 'دان و خوراک', name: 'پس‌دان (فینیشر)', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-304', category: 'دان و خوراک', name: 'ذرت دانه‌ای', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+  { code: 'PRD-305', category: 'دان و خوراک', name: 'کنجاله سویا', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+
+  // دارو و واکسن
+  { code: 'PRD-401', category: 'دارو و واکسن', name: 'واکسن نیوکاسل', unit: 'دز', defaultPrice: 0, active: true },
+  { code: 'PRD-402', category: 'دارو و واکسن', name: 'واکسن برونشیت', unit: 'دز', defaultPrice: 0, active: true },
+  { code: 'PRD-403', category: 'دارو و واکسن', name: 'مولتی ویتامین الکترولیت', unit: 'کیلوگرم', defaultPrice: 0, active: true },
+];
+
 export function blank(): AppState {
   return {
     version: 2,
@@ -60,6 +98,7 @@ export function blank(): AppState {
     transfers: [],
     accounts: [],
     stockMoves: [],
+    products: [],
   };
 }
 

@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { FormModal, Field, type FieldDef, type FormValues } from '../components/Form';
 import { Modal, useUI } from '../components/Modal';
+import { Chips } from '../components/ui';
 import { AddInline } from './index';
 import { Icon } from '../components/Icon';
 import {
@@ -205,6 +206,7 @@ export function TransactionForm({
   const [note, setNote] = useState(editing?.note || '');
   const [discount, setDiscount] = useState(num(editing?.discount));
   const [extraCost, setExtraCost] = useState(num(editing?.extraCost));
+  const [shareMode, setShareMode] = useState<'percent' | 'unit'>(editing?.shareMode || 'percent');
   const [rows, setRows] = useState<TxRow[]>(() =>
     (editing?.items?.length ? editing.items : [{ name: '', unit: units[0], qty: 1, price: 0 }]).map(
       (i, k) => ({ ...i, key: k }),
@@ -262,13 +264,21 @@ export function TransactionForm({
 
     const finalTotal = txTotal(items, discount, extraCost);
     // تخصیص دقیق: جمع سهم‌ها همیشه برابر مبلغ کل است
+    const totalUnits =
+      shareMode === 'unit' ? pickedPartners.reduce((a, p) => a + num(shares[p.id]), 0) : 0;
     const amounts = splitAmount(
       finalTotal,
       pickedPartners.map((p) => num(shares[p.id])),
     );
     const txShares: TxShare[] = pickedPartners.map((p, i) => ({
       partnerId: p.id,
-      percent: num(shares[p.id]),
+      percent:
+        shareMode === 'unit'
+          ? totalUnits > 0
+            ? (num(shares[p.id]) / totalUnits) * 100
+            : 0
+          : num(shares[p.id]),
+      units: shareMode === 'unit' ? num(shares[p.id]) : undefined,
       amount: amounts[i] || 0,
     }));
 
@@ -289,6 +299,7 @@ export function TransactionForm({
       extraCost: num(extraCost),
       total: finalTotal,
       shares: txShares,
+      shareMode,
       note,
     };
 
@@ -501,20 +512,28 @@ export function TransactionForm({
                     className="input"
                     list="inv-item-names"
                     value={r.name}
-                    placeholder="انتخاب از انبار یا تایپ دستی"
+                    placeholder="انتخاب از کالاها و محصولات یا تایپ دستی"
                     onChange={(e) => {
                       const name = e.target.value;
-                      const hit = s.inventory.find(
-                        (x) => x.name.trim() === name.trim() && x.active !== false,
+                      const prodHit = (s.products || []).find(
+                        (x) => x.name.trim().toLowerCase() === name.trim().toLowerCase() && x.active !== false,
+                      );
+                      const invHit = s.inventory.find(
+                        (x) => x.name.trim().toLowerCase() === name.trim().toLowerCase() && x.active !== false,
                       );
                       setRow(r.key, {
                         name,
-                        ...(hit
+                        ...(prodHit
                           ? {
-                              unit: hit.unit || r.unit,
-                              price: num(r.price) || num(hit.pricePerKg),
+                              unit: prodHit.unit || r.unit,
+                              price: num(r.price) || num(prodHit.defaultPrice),
                             }
-                          : {}),
+                          : invHit
+                            ? {
+                                unit: invHit.unit || r.unit,
+                                price: num(r.price) || num(invHit.pricePerKg),
+                              }
+                            : {}),
                       });
                     }}
                   />
@@ -565,12 +584,18 @@ export function TransactionForm({
       </div>
 
       <datalist id="inv-item-names">
+        {(s.products || [])
+          .filter((p) => p.active !== false)
+          .map((p) => (
+            <option key={p.id} value={p.name}>
+              {p.category ? `[${p.category}] ` : ''}{p.code ? p.code + ' — ' : ''}واحد: {p.unit}
+            </option>
+          ))}
         {s.inventory
-          .filter((i) => i.active !== false)
+          .filter((i) => i.active !== false && !(s.products || []).some((p) => p.name.trim() === i.name.trim()))
           .map((i) => (
             <option key={i.id} value={i.name}>
-              {i.code ? i.code + ' — ' : ''}
-              {n(i.qty)} {i.unit}
+              [موجودی انبار] {i.code ? i.code + ' — ' : ''}{n(i.qty)} {i.unit}
             </option>
           ))}
       </datalist>
@@ -609,57 +634,84 @@ export function TransactionForm({
         <div>
           <h3>سهم شرکا در این معامله</h3>
           <span className="sec-sub">
-            جمع: {n(shareSum, 1)}٪ {Math.abs(shareSum - 100) > 0.5 ? '— بهتر است ۱۰۰ باشد' : ''}
+            {shareMode === 'unit'
+              ? `جمع: ${n(shareSum, 1)} سهم — تسهیم مبالغ بر پایه این نسبت انجام می‌شود`
+              : `جمع: ${n(shareSum, 1)}٪ ${Math.abs(shareSum - 100) > 0.5 ? '— بهتر است ۱۰۰ باشد' : ''}`}
           </span>
         </div>
-        <button
-          className="btn sm"
-          type="button"
-          onClick={() => {
-            if (!flockId) {
-              toast('اول دوره پرورش (گله) را انتخاب کنید', 'error');
-              return;
-            }
-            if (applyFlockShares(flockId)) toast('سهم‌ها از گله بازخوانی شد');
-            else toast('برای این گله سهمی تعریف نشده است', 'error');
-          }}
-        >
-          <Icon name="users" size={14} /> از گله
-        </button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Chips
+            items={[
+              { value: 'percent', label: 'درصدی (٪)' },
+              { value: 'unit', label: 'نسبتی (سهمی)' },
+            ]}
+            active={shareMode}
+            onPick={(v) => setShareMode(v as 'percent' | 'unit')}
+          />
+          <button
+            className="btn sm"
+            type="button"
+            onClick={() => {
+              if (!flockId) {
+                toast('اول دوره پرورش (گله) را انتخاب کنید', 'error');
+                return;
+              }
+              if (applyFlockShares(flockId)) toast('سهم‌ها از گله بازخوانی شد');
+              else toast('برای این گله سهمی تعریف نشده است', 'error');
+            }}
+          >
+            <Icon name="users" size={14} /> از گله
+          </button>
+        </div>
       </div>
       <div className="form-grid">
-        {pickedPartners.map((p) => (
-          <div className="field third" key={p.id}>
-            <label className="lbl" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>{p.name}</span>
-              <button
-                className="icon-btn sm"
-                type="button"
-                title="حذف این شریک از معامله"
-                onClick={() => setShareIds((prev) => prev.filter((x) => x !== p.id))}
-              >
-                <Icon name="close" size={12} />
-              </button>
-            </label>
-            <input
-              className="input num"
-              type="number"
-              min={0}
-              max={100}
-              step={0.1}
-              value={shares[p.id] ?? 0}
-              onChange={(e) => setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))}
-            />
-            <div className="hint">
-              {money(
-                splitAmount(
-                  total,
-                  pickedPartners.map((x) => num(shares[x.id])),
-                )[pickedPartners.indexOf(p)] || 0,
-              )}
+        {pickedPartners.map((p) => {
+          const val = num(shares[p.id]);
+          const effectivePct =
+            shareMode === 'unit'
+              ? shareSum > 0
+                ? (val / shareSum) * 100
+                : 0
+              : val;
+          const shareAmt =
+            splitAmount(
+              total,
+              pickedPartners.map((x) => num(shares[x.id])),
+            )[pickedPartners.indexOf(p)] || 0;
+
+          return (
+            <div className="field third" key={p.id}>
+              <label className="lbl" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{p.name} {shareMode === 'unit' ? '(تعداد سهم)' : '(درصد)'}</span>
+                <button
+                  className="icon-btn sm"
+                  type="button"
+                  title="حذف این شریک از معامله"
+                  onClick={() => setShareIds((prev) => prev.filter((x) => x !== p.id))}
+                >
+                  <Icon name="close" size={12} />
+                </button>
+              </label>
+              <input
+                className="input num"
+                type="number"
+                min={0}
+                max={shareMode === 'unit' ? undefined : 100}
+                step={shareMode === 'unit' ? 1 : 0.1}
+                value={shares[p.id] ?? 0}
+                onChange={(e) => setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))}
+              />
+              <div className="hint">
+                {shareMode === 'unit' && shareSum > 0 ? (
+                  <span style={{ display: 'block', color: 'var(--brand)', marginBottom: 2 }}>
+                    {n(val)} از {n(shareSum)} سهم ({n(effectivePct, 1)}٪)
+                  </span>
+                ) : null}
+                {money(shareAmt)}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {s.partners.some((p) => !shareIds.includes(p.id)) ? (

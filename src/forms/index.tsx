@@ -31,6 +31,7 @@ import type {
   Formula,
   InventoryItem,
   Partner,
+  Product,
   Sale,
   Task,
   Vaccine,
@@ -54,6 +55,7 @@ export function ExpenseForm({
   const { toast } = useUI();
   const editing = id ? s.expenses.find((e) => e.id === id) : null;
 
+  const [shareMode, setShareMode] = useState<'percent' | 'unit'>(editing?.shareMode || 'percent');
   const [shares, setShares] = useState<Record<string, number>>(() => {
     if (editing?.shares) return { ...editing.shares };
     const init: Record<string, number> = {};
@@ -159,42 +161,116 @@ export function ExpenseForm({
           return { sub: subs[0] ?? '' };
         }
       }}
-      extra={(values) =>
-        values.split === 'custom' ? (
-          <div className="field full" style={{ marginTop: 10 }}>
-            <label className="lbl">درصد سهم هر شریک در این هزینه</label>
-            <div className="form-grid">
-              {s.partners.map((p) => (
-                <div className="field" key={p.id}>
-                  <label className="lbl">{p.name}</label>
-                  <input
-                    className="input num"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={shares[p.id] ?? 0}
-                    onChange={(e) =>
-                      setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
-                    }
-                  />
-                </div>
-              ))}
-            </div>
+      extra={(values, setValue) => (
+        <>
+          <div className="field full" style={{ marginBottom: 8 }}>
+            <label className="lbl">انتخاب از کالاها و محصولات تعریف‌شده (اختیاری)</label>
+            <select
+              className="input"
+              value=""
+              onChange={(e) => {
+                const prod = (s.products || []).find((p) => p.id === e.target.value);
+                if (prod && setValue) {
+                  setValue('title', `خرید ${prod.name}`);
+                  setValue('sub', prod.name);
+                  setValue('unit', prod.unit);
+                  if (prod.defaultPrice && num(values.qty) > 0) {
+                    setValue('amount', num(values.qty) * num(prod.defaultPrice));
+                  }
+                  toast(`کالای «${prod.name}» بازخوانی شد`);
+                }
+              }}
+            >
+              <option value="">انتخاب سریع از کاتالوگ کالاها و محصولات...</option>
+              {(s.products || [])
+                .filter((p) => p.active !== false)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.category}] {p.name} ({p.unit})
+                  </option>
+                ))}
+            </select>
           </div>
-        ) : null
-      }
+
+          {values.split === 'custom' ? (
+            <div className="field full" style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                <label className="lbl" style={{ margin: 0 }}>
+                  سهم شرکا در این هزینه ({shareMode === 'unit' ? 'نسبتی / سهمی' : 'درصدی'})
+                </label>
+                <Chips
+                  items={[
+                    { value: 'percent', label: 'درصدی (٪)' },
+                    { value: 'unit', label: 'نسبتی (سهمی)' },
+                  ]}
+                  active={shareMode}
+                  onPick={(v) => setShareMode(v as 'percent' | 'unit')}
+                />
+              </div>
+              <div className="form-grid">
+                {s.partners.map((p) => {
+                  const val = num(shares[p.id]);
+                  const sumVal = s.partners.reduce((a, x) => a + num(shares[x.id]), 0);
+                  const effectivePct =
+                    shareMode === 'unit' ? (sumVal > 0 ? (val / sumVal) * 100 : 0) : val;
+                  const totalAmt = num(values.amount);
+                  const shareAmt =
+                    sumVal > 0 ? (totalAmt * val) / (shareMode === 'unit' ? sumVal : 100) : 0;
+
+                  return (
+                    <div className="field" key={p.id}>
+                      <label className="lbl">
+                        {p.name} {shareMode === 'unit' ? '(تعداد سهم)' : '(درصد)'}
+                      </label>
+                      <input
+                        className="input num"
+                        type="number"
+                        min={0}
+                        max={shareMode === 'unit' ? undefined : 100}
+                        step={shareMode === 'unit' ? 1 : 0.1}
+                        value={shares[p.id] ?? 0}
+                        onChange={(e) =>
+                          setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
+                        }
+                      />
+                      <div className="hint" style={{ fontSize: 11 }}>
+                        {shareMode === 'unit' && sumVal > 0 ? (
+                          <span style={{ color: 'var(--brand)', display: 'block' }}>
+                            {n(val)} از {n(sumVal)} سهم ({n(effectivePct, 1)}٪)
+                          </span>
+                        ) : null}
+                        {money(shareAmt)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
       onSubmit={(v) => {
-        const data: FormValues = { ...v, amount: num(v.amount), qty: num(v.qty) };
+        const data: FormValues = {
+          ...v,
+          amount: num(v.amount),
+          qty: num(v.qty),
+          shareMode: v.split === 'custom' ? shareMode : undefined,
+        };
         if (data.split === 'custom') {
           const tot = s.partners.reduce((a, p) => a + num(shares[p.id]), 0);
-          if (Math.abs(tot - 100) > 0.5) {
+          if (shareMode === 'percent' && Math.abs(tot - 100) > 0.5) {
             toast(`مجموع درصدها باید ۱۰۰ باشد (فعلی: ${tot})`, 'error');
             return false;
           }
+          if (shareMode === 'unit' && tot <= 0) {
+            toast('حداقل یک سهم برای شرکا وارد کنید', 'error');
+            return false;
+          }
           data.shares = shares;
+          data.shareMode = shareMode;
         } else {
           delete data.shares;
+          delete data.shareMode;
         }
         if (editing) {
           actions.update('expenses', editing.id, asPatch<Expense>(data));
@@ -214,11 +290,27 @@ export function SaleForm({ id, onClose }: { id?: string; onClose: () => void }) 
   const { toast } = useUI();
   const editing = id ? s.sales.find((x) => x.id === id) : null;
 
+  const [shareMode, setShareMode] = useState<'percent' | 'unit'>(editing?.shareMode || 'percent');
+  const [shares, setShares] = useState<Record<string, number>>(() => {
+    if (editing?.shares) return { ...editing.shares };
+    const init: Record<string, number> = {};
+    s.partners.forEach((p) => (init[p.id] = num(p.share)));
+    return init;
+  });
+
+  const productTypes = Array.from(
+    new Set([
+      ...MEAT_TYPES,
+      ...(s.products || []).filter((p) => p.category === 'گوشت').map((p) => p.name),
+      ...(s.products || []).map((p) => p.name),
+    ]),
+  );
+
   const initial: FormValues = editing
     ? { ...editing }
     : {
         date: today(),
-        type: 'لاشه کامل',
+        type: productTypes[0] || 'لاشه کامل',
         qtyKg: 0,
         pricePerKg: 0,
         amount: 0,
@@ -230,11 +322,11 @@ export function SaleForm({ id, onClose }: { id?: string; onClose: () => void }) 
 
   const fields: FieldDef[] = [
     { name: 'date', label: 'تاریخ', type: 'date', required: true, col: 'half' },
-    { name: 'type', label: 'نوع محصول', type: 'select', required: true, col: 'half', options: MEAT_TYPES },
-    { name: 'qtyKg', label: 'وزن (کیلوگرم)', type: 'number', required: true, col: 'third' },
-    { name: 'pricePerKg', label: 'قیمت هر کیلو', type: 'money', required: true, col: 'third' },
+    { name: 'type', label: 'نوع محصول / کالا', type: 'select', required: true, col: 'half', options: productTypes },
+    { name: 'qtyKg', label: 'وزن / تعداد', type: 'number', required: true, col: 'third' },
+    { name: 'pricePerKg', label: 'قیمت واحد', type: 'money', required: true, col: 'third' },
     { name: 'amount', label: 'مبلغ کل', type: 'money', col: 'third', hint: 'خودکار محاسبه می‌شود' },
-    { name: 'buyer', label: 'خریدار', type: 'text', col: 'half' },
+    { name: 'buyer', label: 'خریدار / طرف حساب', type: 'text', col: 'half' },
     {
       name: 'flockId',
       label: 'گله',
@@ -265,6 +357,88 @@ export function SaleForm({ id, onClose }: { id?: string; onClose: () => void }) 
       initial={initial}
       submitText={editing ? 'ذخیره' : 'ثبت فروش'}
       onClose={onClose}
+      extra={(values, setValue) => (
+        <>
+          <div className="field full" style={{ marginBottom: 8 }}>
+            <label className="lbl">انتخاب سریع از کالاها و محصولات</label>
+            <select
+              className="input"
+              value=""
+              onChange={(e) => {
+                const prod = (s.products || []).find((p) => p.id === e.target.value);
+                if (prod && setValue) {
+                  setValue('type', prod.name);
+                  if (prod.defaultPrice) setValue('pricePerKg', prod.defaultPrice);
+                  toast(`محصول «${prod.name}» بازخوانی شد`);
+                }
+              }}
+            >
+              <option value="">انتخاب از کاتالوگ محصولات...</option>
+              {(s.products || [])
+                .filter((p) => p.active !== false)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.category}] {p.name} ({p.unit})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="field full" style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+              <label className="lbl" style={{ margin: 0 }}>
+                سهم شرکا در این فروش ({shareMode === 'unit' ? 'نسبتی / سهمی' : 'درصدی'})
+              </label>
+              <Chips
+                items={[
+                  { value: 'percent', label: 'درصدی (٪)' },
+                  { value: 'unit', label: 'نسبتی (سهمی)' },
+                ]}
+                active={shareMode}
+                onPick={(v) => setShareMode(v as 'percent' | 'unit')}
+              />
+            </div>
+            <div className="form-grid">
+              {s.partners.map((p) => {
+                const val = num(shares[p.id]);
+                const sumVal = s.partners.reduce((a, x) => a + num(shares[x.id]), 0);
+                const effectivePct =
+                  shareMode === 'unit' ? (sumVal > 0 ? (val / sumVal) * 100 : 0) : val;
+                const totalAmt = num(values.amount) || num(values.qtyKg) * num(values.pricePerKg);
+                const shareAmt =
+                  sumVal > 0 ? (totalAmt * val) / (shareMode === 'unit' ? sumVal : 100) : 0;
+
+                return (
+                  <div className="field" key={p.id}>
+                    <label className="lbl">
+                      {p.name} {shareMode === 'unit' ? '(تعداد سهم)' : '(درصد)'}
+                    </label>
+                    <input
+                      className="input num"
+                      type="number"
+                      min={0}
+                      max={shareMode === 'unit' ? undefined : 100}
+                      step={shareMode === 'unit' ? 1 : 0.1}
+                      value={shares[p.id] ?? 0}
+                      onChange={(e) =>
+                        setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
+                      }
+                    />
+                    <div className="hint" style={{ fontSize: 11 }}>
+                      {shareMode === 'unit' && sumVal > 0 ? (
+                        <span style={{ color: 'var(--brand)', display: 'block' }}>
+                          {n(val)} از {n(sumVal)} سهم ({n(effectivePct, 1)}٪)
+                        </span>
+                      ) : null}
+                      {money(shareAmt)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
       onChange={(name, _v, values) => {
         if (name === 'qtyKg' || name === 'pricePerKg') {
           const amount = num(values.qtyKg) * num(values.pricePerKg);
@@ -277,6 +451,8 @@ export function SaleForm({ id, onClose }: { id?: string; onClose: () => void }) 
           qtyKg: num(v.qtyKg),
           pricePerKg: num(v.pricePerKg),
           amount: num(v.amount) || num(v.qtyKg) * num(v.pricePerKg),
+          shares,
+          shareMode,
         };
         if (editing) {
           actions.update('sales', editing.id, asPatch<Sale>(data));
@@ -360,7 +536,7 @@ export function DailyForm({
           waterL: num(v.waterL),
           avgWeightG: num(v.avgWeightG),
           tempC: num(v.tempC),
-          age: flock ? Math.max(0, diff(flock.startDate, String(v.date))) : 0,
+          age: flock ? Math.max(0, diff(flock.startDate, String(v.date))) + num(flock.chickAge) : 0,
         };
         if (editing) {
           actions.update('daily', editing.id, asPatch<DailyRecord>(data));
@@ -914,24 +1090,52 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
       initial={initial}
       onClose={onClose}
       extra={(_v, setValue) => (
-        <div className="grid grid-2" style={{ gap: 8, marginTop: 10 }}>
-          <AddInline
-            label="دسته جدید"
-            placeholder="مثلاً بسته‌بندی"
-            onAdd={(val) => {
-              actions.setSettings({ itemCats: Array.from(new Set([...(s.settings.itemCats || []), val])) });
-              setValue('cat', val);
-            }}
-          />
-          <AddInline
-            label="واحد جدید"
-            placeholder="مثلاً کارتن"
-            onAdd={(val) => {
-              actions.setSettings({ units: Array.from(new Set([...(s.settings.units || []), val])) });
-              setValue('unit', val);
-            }}
-          />
-        </div>
+        <>
+          <div className="field full" style={{ marginBottom: 8 }}>
+            <label className="lbl">بازخوانی از کالاها و محصولات تعریف‌شده (اختیاری)</label>
+            <select
+              className="input"
+              value=""
+              onChange={(e) => {
+                const prod = (s.products || []).find((p) => p.id === e.target.value);
+                if (prod && setValue) {
+                  setValue('name', prod.name);
+                  if (prod.category) setValue('cat', prod.category);
+                  if (prod.unit) setValue('unit', prod.unit);
+                  if (prod.defaultPrice) setValue('pricePerKg', prod.defaultPrice);
+                  toast(`مشخصات «${prod.name}» بازخوانی شد`);
+                }
+              }}
+            >
+              <option value="">انتخاب از کاتالوگ کالاها و محصولات...</option>
+              {(s.products || [])
+                .filter((p) => p.active !== false)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.category}] {p.name} ({p.unit})
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="grid grid-2" style={{ gap: 8, marginTop: 10 }}>
+            <AddInline
+              label="دسته جدید"
+              placeholder="مثلاً بسته‌بندی"
+              onAdd={(val) => {
+                actions.setSettings({ itemCats: Array.from(new Set([...(s.settings.itemCats || []), val])) });
+                setValue('cat', val);
+              }}
+            />
+            <AddInline
+              label="واحد جدید"
+              placeholder="مثلاً کارتن"
+              onAdd={(val) => {
+                actions.setSettings({ units: Array.from(new Set([...(s.settings.units || []), val])) });
+                setValue('unit', val);
+              }}
+            />
+          </div>
+        </>
       )}
       onSubmit={(v) => {
         const data: FormValues = {
@@ -1255,6 +1459,24 @@ export function BatchForm({
             note: 'ثبت خودکار از بچ خوراک',
           });
         }
+        if (fm && num(v.qtyKg) > 0) {
+          const delta: Record<string, number> = {};
+          (fm.items || []).forEach((it) => {
+            const itemKg = (num(it.percent) / 100) * num(v.qtyKg);
+            const itemName = String(it.name || '').trim();
+            if (itemKg > 0 && itemName) {
+              delta[itemName] = (delta[itemName] || 0) - itemKg;
+            }
+          });
+          if (Object.keys(delta).length) {
+            actions.adjustStock(delta, {
+              date: String(v.date),
+              reason: `مصرف تولید دان (${fm.name})`,
+              refType: 'manual',
+              note: `بچ ${n(num(v.qtyKg))} کیلوگرم`,
+            });
+          }
+        }
         toast('بچ تولید ثبت شد');
       }}
     />
@@ -1448,3 +1670,123 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
 
 /** تاریخ پیش‌فرض برای فرم‌های وابسته به گله */
 export const defaultFlockDate = (startDate: string, days: number) => addDays(startDate, days);
+
+/* --------------------------- کالاها و محصولات --------------------------- */
+export function ProductForm({ id, onClose }: { id?: string; onClose: () => void }) {
+  const s = useApp();
+  const { toast } = useUI();
+  const editing = id ? s.products?.find((p) => p.id === id) : null;
+
+  const existingCats = Array.from(
+    new Set([
+      'جوجه',
+      'گوشت',
+      'دان و خوراک',
+      'دارو و واکسن',
+      'لوازم و تجهیزات',
+      'بسته‌بندی',
+      ...(s.products || []).map((p) => p.category).filter(Boolean),
+    ]),
+  );
+
+  const units = Array.from(new Set([...UNITS, ...(s.settings.units || [])]));
+
+  const initial: FormValues = editing
+    ? { ...editing }
+    : {
+        code: nextCode('PRD', (s.products || []).map((p) => p.code || '')),
+        category: existingCats[0] || 'جوجه',
+        name: '',
+        unit: 'قطعه',
+        defaultPrice: 0,
+        active: true,
+        note: '',
+      };
+
+  const fields: FieldDef[] = [
+    { name: 'code', label: 'کد کالا', type: 'text', col: 'third', hint: 'خودکار' },
+    {
+      name: 'category',
+      label: 'دسته کالا',
+      type: 'select',
+      required: true,
+      col: 'third',
+      options: existingCats,
+      hint: 'برای افزودن دسته جدید از دکمه پایین فرم استفاده کنید',
+    },
+    {
+      name: 'unit',
+      label: 'واحد شمارش / سنجش',
+      type: 'select',
+      required: true,
+      col: 'third',
+      options: units,
+    },
+    {
+      name: 'name',
+      label: 'نام کالا / محصول',
+      type: 'text',
+      required: true,
+      col: 'half',
+      placeholder: 'مثلاً یک روزه، لاشه، سینه با پوست، ذرت...',
+    },
+    {
+      name: 'defaultPrice',
+      label: 'قیمت پیش‌فرض (تومان - اختیاری)',
+      type: 'money',
+      col: 'half',
+    },
+    {
+      name: 'active',
+      label: 'این کالا فعال است و در لیست‌ها نمایش داده شود',
+      type: 'checkbox',
+      col: 'full',
+    },
+    { name: 'note', label: 'توضیحات / مشخصات فنی', type: 'textarea', col: 'full' },
+  ];
+
+  return (
+    <FormModal
+      title={editing ? 'ویرایش کالا / محصول' : 'تعریف کالا و محصول جدید'}
+      fields={fields}
+      initial={initial}
+      onClose={onClose}
+      extra={(_v, setValue) => (
+        <div className="grid grid-2" style={{ gap: 8, marginTop: 10 }}>
+          <AddInline
+            label="دسته جدید"
+            placeholder="مثلاً آلایش، پر مرغ..."
+            onAdd={(val) => {
+              setValue('category', val);
+            }}
+          />
+          <AddInline
+            label="واحد جدید"
+            placeholder="مثلاً کارتن، شانه، کیسه..."
+            onAdd={(val) => {
+              actions.setSettings({ units: Array.from(new Set([...(s.settings.units || []), val])) });
+              setValue('unit', val);
+            }}
+          />
+        </div>
+      )}
+      onSubmit={(v) => {
+        const data: FormValues = {
+          ...v,
+          name: String(v.name || '').trim(),
+          category: String(v.category || 'عمومی').trim(),
+          unit: String(v.unit || 'کیلوگرم').trim(),
+          defaultPrice: num(v.defaultPrice),
+          active: v.active !== false,
+        };
+        if (!data.name) {
+          toast('نام کالا الزامی است', 'error');
+          return false;
+        }
+        if (editing) actions.update('products', editing.id, asPatch<Product>(data));
+        else actions.add('products', asNew<Product>(data));
+        toast('کالا ذخیره شد');
+      }}
+    />
+  );
+}

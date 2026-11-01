@@ -53,6 +53,7 @@ export interface TxShare {
   partnerId: string;
   percent: number;
   amount: number;
+  units?: number;
 }
 
 export interface Transaction extends Base {
@@ -72,6 +73,7 @@ export interface Transaction extends Base {
   extraCost: number;
   total: number;
   shares: TxShare[];
+  shareMode?: 'percent' | 'unit';
   note: string;
   /** سند قفل‌شده قابل ویرایش یا حذف نیست */
   locked: boolean;
@@ -165,6 +167,7 @@ export interface Expense extends Base {
   paidBy: string;
   split: Split;
   shares?: Record<string, number>;
+  shareMode?: 'percent' | 'unit';
   note: string;
 }
 
@@ -177,6 +180,8 @@ export interface Sale extends Base {
   buyer: string;
   flockId: string;
   paidTo: string;
+  shares?: Record<string, number>;
+  shareMode?: 'percent' | 'unit';
   note: string;
 }
 
@@ -297,6 +302,17 @@ export interface StockMove extends Base {
   note: string;
 }
 
+/* --------------------------- کالاها و محصولات --------------------------- */
+export interface Product extends Base {
+  code: string;
+  name: string;
+  category: string;
+  unit: string;
+  defaultPrice?: number;
+  note?: string;
+  active?: boolean;
+}
+
 export interface AppState {
   version: number;
   settings: Settings;
@@ -318,6 +334,7 @@ export interface AppState {
   transfers: Transfer[];
   accounts: Account[];
   stockMoves: StockMove[];
+  products: Product[];
 }
 
 export type CollectionKey =
@@ -338,7 +355,8 @@ export type CollectionKey =
   | 'payments'
   | 'transfers'
   | 'accounts'
-  | 'stockMoves';
+  | 'stockMoves'
+  | 'products';
 
 export interface FlockStats {
   flock: Flock;
