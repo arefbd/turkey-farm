@@ -21,6 +21,8 @@ export interface Settings {
   accountKinds: string[];
   /** دسته‌های کالای انبار — افزوده‌های کاربر */
   itemCats: string[];
+  /** دسته‌های کالاها و محصولات — افزوده‌های کاربر */
+  productCategories?: string[];
 }
 
 /* ------------------------------- اشخاص (CRM) ------------------------------ */

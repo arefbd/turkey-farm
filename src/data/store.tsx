@@ -405,6 +405,13 @@ export function activeProducts(s: AppState): Product[] {
 
 export function productCategories(s: AppState): string[] {
   const cats = new Set<string>();
+  const defaults =
+    s.settings.productCategories && s.settings.productCategories.length
+      ? s.settings.productCategories
+      : ['جوجه', 'گوشت', 'دان و خوراک', 'دارو و واکسن', 'لوازم و تجهیزات', 'بسته‌بندی'];
+  defaults.forEach((c) => {
+    if (c) cats.add(c.trim());
+  });
   s.products.forEach((p) => {
     if (p.category) cats.add(p.category.trim());
   });
@@ -564,7 +571,7 @@ export function sumTransactions(list: Transaction[]): TxSums {
   };
 }
 
-/** تعداد فروش‌رفته و وزن فروخته‌شده یک گله — محاسبه خودکار از معاملات و فروش‌ها */
+/** تعداد فروش‌رفته و وزن فروخته‌شده یک گله — محاسبه دقیق از معاملات و فروش‌ها */
 export function soldForFlock(
   s: AppState,
   flockId: string,
@@ -579,6 +586,7 @@ export function soldForFlock(
         ? num(s.settings.targetWeightG)
         : 8000;
 
+  // ۱. بررسی معاملات ثبت‌شده برای این گله
   s.transactions.forEach((t) => {
     if (t.flockId !== flockId) return;
     const sign = t.type === 'sale' ? 1 : t.type === 'sale_return' ? -1 : 0;
@@ -586,19 +594,60 @@ export function soldForFlock(
 
     (t.items || []).forEach((i) => {
       const q = num(i.qty);
+      if (q <= 0) return;
       const u = (i.unit || '').trim();
+      const name = (i.name || '').trim();
+
+      // تشخیص اینکه آیا این ردیف مربوط به پرنده/جوجه/گوشت است یا اقلام غیرپرنده‌ای (مثل دان، دارو، تجهیزات)
       const isCount = u === 'قطعه' || u === 'عدد' || u === 'رأس' || u === 'راس';
       const isTon = u === 'تن';
+      const isWeight = u === 'کیلوگرم' || u === 'کیلو' || isTon;
+
+      // جستجوی کالا در کاتالوگ برای تشخیص دقیق دسته
+      const catalogItem = s.products.find((p) => p.name.trim() === name);
+      const isFeedOrSupply =
+        catalogItem?.category === 'دان و خوراک' ||
+        catalogItem?.category === 'دارو و واکسن' ||
+        catalogItem?.category === 'لوازم و تجهیزات' ||
+        name.includes('دان') ||
+        name.includes('خوراک') ||
+        name.includes('ذرت') ||
+        name.includes('سویا') ||
+        name.includes('کود') ||
+        name.includes('واکسن') ||
+        name.includes('دارو');
+
+      if (isFeedOrSupply && !isCount) {
+        // اقلام خوراک و لوازم نباید از جمعیت پرنده کم شوند
+        return;
+      }
 
       if (isCount) {
+        // فروش تعدادی (جوجه یک‌روزه، چند روزه، نیمچه، قطعه)
         count += sign * q;
         weightKg += sign * (q * avgW) / 1000;
-      } else {
+      } else if (isWeight) {
+        // فروش وزنی (لاشه، گوشت، بوقلمون زنده بر اساس کیلوگرم)
         const itemKg = isTon ? q * 1000 : q;
         weightKg += sign * itemKg;
         count += sign * Math.round((itemKg * 1000) / avgW);
       }
     });
+  });
+
+  // ۲. بررسی فروش‌های ثبت‌شده در جدول sales برای این گله (سازگاری کامل با فروش‌های مستقیم)
+  s.sales.forEach((sale) => {
+    if (sale.flockId !== flockId) return;
+    const q = num(sale.qtyKg);
+    if (q <= 0) return;
+    const prod = s.products.find((p) => p.name === sale.type);
+    if (prod && prod.category === 'جوجه') {
+      count += q;
+      weightKg += (q * avgW) / 1000;
+    } else {
+      weightKg += q;
+      count += Math.round((q * 1000) / avgW);
+    }
   });
 
   return {
@@ -905,9 +954,8 @@ export function flockStats(s: AppState, id: string): FlockStats | null {
 
   // بیومس پرندگان زنده فعلی در سالن
   const biomass = (alive * lastW) / 1000;
-  // وزن پرندگان فروخته شده (از معاملات و فروش‌های سنتی)
-  const legacySalesKg = sum(s.sales.filter((x) => x.flockId === id), 'qtyKg');
-  const soldBiomass = soldInfo.weightKg + legacySalesKg;
+  // وزن پرندگان فروخته شده (از معاملات و فروش‌ها)
+  const soldBiomass = soldInfo.weightKg;
   // کل زیست‌توده تولید شده دوره (پرندگان موجود + پرندگان فروخته شده)
   const totalProducedKg = biomass + soldBiomass;
 

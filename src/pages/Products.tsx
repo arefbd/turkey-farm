@@ -19,11 +19,28 @@ export function Products() {
   // استخراج دسته‌های متمایز موجود
   const categories = useMemo(() => {
     const set = new Set<string>();
+    const defaults =
+      s.settings.productCategories && s.settings.productCategories.length
+        ? s.settings.productCategories
+        : ['جوجه', 'گوشت', 'دان و خوراک', 'دارو و واکسن', 'لوازم و تجهیزات', 'بسته‌بندی'];
+    defaults.forEach((c) => {
+      if (c) set.add(c.trim());
+    });
     products.forEach((p) => {
       if (p.category) set.add(p.category.trim());
     });
     return Array.from(set);
-  }, [products]);
+  }, [products, s.settings.productCategories]);
+
+  const promptNewCategory = () => {
+    const name = window.prompt('نام دسته جدید را وارد کنید: (مثلاً آلایش، پر، مکمل، تجهیزات)');
+    if (!name || !name.trim()) return;
+    const cat = name.trim();
+    const updated = Array.from(new Set([...categories, cat]));
+    actions.setSettings({ productCategories: updated });
+    setSelectedCat(cat);
+    ui.toast(`دسته «${cat}» ایجاد و اضافه شد`);
+  };
 
   // فیلتر و جستجو
   const list = useMemo(() => {
@@ -100,17 +117,22 @@ export function Products() {
           </div>
         </div>
 
-        <div className="mt-sm">
-          <Chips
-            items={[{ value: 'all', label: `همه (${n(products.length)})` }].concat(
-              categories.map((c) => ({
-                value: c,
-                label: `${c} (${n(products.filter((p) => p.category === c).length)})`,
-              })),
-            )}
-            active={selectedCat}
-            onPick={(v) => setSelectedCat(v)}
-          />
+        <div className="mt-sm" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <Chips
+              items={[{ value: 'all', label: `همه (${n(products.length)})` }].concat(
+                categories.map((c) => ({
+                  value: c,
+                  label: `${c} (${n(products.filter((p) => p.category === c).length)})`,
+                })),
+              )}
+              active={selectedCat}
+              onPick={(v) => setSelectedCat(v)}
+            />
+          </div>
+          <button className="btn sm ghost" onClick={promptNewCategory} title="افزودن دسته جدید">
+            <Icon name="plus" size={14} /> تعریف دسته جدید
+          </button>
         </div>
       </div>
 

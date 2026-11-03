@@ -1,4 +1,5 @@
 /** داشبورد اصلی */
+import { useState } from 'react';
 import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Bars, Donut } from '../components/Charts';
@@ -23,8 +24,14 @@ export function Dashboard() {
   const s = useApp();
   const ui = useUI();
 
-  const active = activeFlocks(s)[0];
+  const actives = activeFlocks(s);
+  const [selectedFlockId, setSelectedFlockId] = useState<string>('');
+  const active = (selectedFlockId ? s.flocks.find((f) => f.id === selectedFlockId) : null) || actives[0] || null;
   const fs = active ? flockStats(s, active.id) : null;
+  const totalAliveAllFlocks = actives.reduce((sum, f) => {
+    const st = flockStats(s, f.id);
+    return sum + (st ? st.alive : 0);
+  }, 0);
   const t = totals(s);
   const series = monthlySeries(s, 6);
   const allCats = byCategory(s);
@@ -57,18 +64,48 @@ export function Dashboard() {
           </div>
           <span className="hero-chip">
             <Icon name="egg" size={13} />
-            {active ? active.hall || 'سالن' : 'بدون گله فعال'}
+            {active ? `${active.name} · ${active.hall || 'سالن'}` : 'بدون گله فعال'}
           </span>
         </div>
         <div className="hero-body">
-          <div className="hero-label">موجودی زنده گله فعال</div>
+          {actives.length > 1 ? (
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', margin: '4px auto 14px', flexWrap: 'wrap' }}>
+              {actives.map((f) => {
+                const fst = flockStats(s, f.id);
+                const isSelected = active?.id === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setSelectedFlockId(f.id)}
+                    style={{
+                      background: isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.22)',
+                      color: isSelected ? 'var(--brand, #6D28D9)' : '#FFFFFF',
+                      border: 'none',
+                      borderRadius: 20,
+                      padding: '4px 14px',
+                      fontSize: 12,
+                      fontWeight: isSelected ? 700 : 500,
+                      cursor: 'pointer',
+                      boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                    }}
+                  >
+                    {f.name}: {n(fst?.alive ?? 0)} قطعه
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="hero-label">
+            موجودی زنده {active ? active.name : 'گله فعال'}
+          </div>
           <div className="hero-value">
             {n(fs ? fs.alive : 0)} <small>قطعه</small>
           </div>
           <div className="hero-sub">
             {active && fs
-              ? `${active.name} · ${n(fs.age)} روزه · وزن میانگین ${n(fs.avgWeightG / 1000, 2)} کیلو`
+              ? `${active.name} · ${n(fs.age)} روزه · فروش‌رفته: ${n(fs.sold)} قطعه · وزن میانگین ${n(fs.avgWeightG / 1000, 2)} کیلو`
               : 'برای شروع یک گله جدید ثبت کنید'}
+            {actives.length > 1 ? ` · (کل گله‌ها: ${n(totalAliveAllFlocks)} قطعه)` : ''}
           </div>
         </div>
       </section>

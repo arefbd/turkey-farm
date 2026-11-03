@@ -20,6 +20,15 @@ import type {
 
 export const STORAGE_KEY = 'turkeyFarm.v3';
 
+export const DEFAULT_PRODUCT_CATEGORIES = [
+  'جوجه',
+  'گوشت',
+  'دان و خوراک',
+  'دارو و واکسن',
+  'لوازم و تجهیزات',
+  'بسته‌بندی',
+];
+
 export const DEFAULT_SETTINGS: Settings = {
   farmName: 'مزرعه بوقلمون پارس',
   owner: 'مدیریت مزرعه',
@@ -31,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   units: [],
   itemCats: [],
   accountKinds: [],
+  productCategories: DEFAULT_PRODUCT_CATEGORIES,
 };
 
 let seq = 0;

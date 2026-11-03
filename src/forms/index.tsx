@@ -4,7 +4,7 @@ import { FormModal, Field, type FieldDef, type FormValues } from '../components/
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Chips } from '../components/ui';
-import { actions, nextCode, num, useApp } from '../data/store';
+import { actions, flockStats, nextCode, num, useApp } from '../data/store';
 import {
   CHICK_AGE_DEFAULT,
   CHICK_TYPES,
@@ -502,7 +502,11 @@ export function DailyForm({
       type: 'select',
       required: true,
       col: 'half',
-      options: s.flocks.map((f) => ({ value: f.id, label: f.name })),
+      options: s.flocks.map((f) => {
+        const st = flockStats(s, f.id);
+        const aliveText = st ? ` (موجودی زنده: ${n(st.alive)} قطعه)` : '';
+        return { value: f.id, label: `${f.name}${aliveText}` };
+      }),
     },
     { name: 'mortality', label: 'تلفات (قطعه)', type: 'number', col: 'third' },
     { name: 'culled', label: 'حذفی (قطعه)', type: 'number', col: 'third' },
@@ -585,7 +589,11 @@ export function VaccineForm({
       type: 'select',
       required: true,
       col: 'half',
-      options: s.flocks.map((f) => ({ value: f.id, label: f.name })),
+      options: s.flocks.map((f) => {
+        const st = flockStats(s, f.id);
+        const aliveText = st ? ` (موجودی زنده: ${n(st.alive)} قطعه)` : '';
+        return { value: f.id, label: `${f.name}${aliveText}` };
+      }),
     },
     { name: 'name', label: 'نام واکسن', type: 'text', required: true, col: 'half', placeholder: 'نیوکاسل، گامبورو ...' },
     {
@@ -881,6 +889,21 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
       }
     >
       <div className="form-grid">
+        {editing ? (() => {
+          const st = flockStats(s, editing.id);
+          if (!st) return null;
+          return (
+            <div className="field full" style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', padding: '10px 14px', borderRadius: 10 }}>
+              <div style={{ fontSize: 12, color: '#6D28D9', fontWeight: 600, marginBottom: 6 }}>📊 آمار زنده گله «{editing.name}»:</div>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
+                <span>تعداد اولیه شروع: <b>{n(st.flock.startCount)} قطعه</b></span>
+                <span>تلفات و حذفی: <b style={{ color: '#DC2626' }}>{n(st.mortality + st.culled)} قطعه</b></span>
+                <span>فروش‌رفته (معاملات): <b style={{ color: '#2563EB' }}>{n(st.sold)} قطعه</b></span>
+                <span>موجودی زنده فعلی: <b style={{ color: '#059669', fontSize: 15 }}>{n(st.alive)} قطعه</b></span>
+              </div>
+            </div>
+          );
+        })() : null}
         <div className="field full">
           <label className="lbl">نام گله / دوره</label>
           <input
@@ -1676,8 +1699,9 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
   const s = useApp();
   const { toast } = useUI();
   const editing = id ? s.products?.find((p) => p.id === id) : null;
+  const [customCats, setCustomCats] = useState<string[]>([]);
 
-  const existingCats = Array.from(
+  const baseCats = Array.from(
     new Set([
       'جوجه',
       'گوشت',
@@ -1685,6 +1709,7 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
       'دارو و واکسن',
       'لوازم و تجهیزات',
       'بسته‌بندی',
+      ...(s.settings.productCategories || []),
       ...(s.products || []).map((p) => p.category).filter(Boolean),
     ]),
   );
@@ -1695,7 +1720,7 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
     ? { ...editing }
     : {
         code: nextCode('PRD', (s.products || []).map((p) => p.code || '')),
-        category: existingCats[0] || 'جوجه',
+        category: baseCats[0] || 'جوجه',
         name: '',
         unit: 'قطعه',
         defaultPrice: 0,
@@ -1711,8 +1736,12 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
       type: 'select',
       required: true,
       col: 'third',
-      options: existingCats,
-      hint: 'برای افزودن دسته جدید از دکمه پایین فرم استفاده کنید',
+      options: (values) => {
+        const set = new Set([...baseCats, ...customCats]);
+        if (values.category) set.add(String(values.category).trim());
+        return Array.from(set);
+      },
+      hint: 'برای افزودن دسته جدید از کادر پایین فرم استفاده کنید',
     },
     {
       name: 'unit',
@@ -1720,7 +1749,11 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
       type: 'select',
       required: true,
       col: 'third',
-      options: units,
+      options: (values) => {
+        const set = new Set(units);
+        if (values.unit) set.add(String(values.unit).trim());
+        return Array.from(set);
+      },
     },
     {
       name: 'name',
@@ -1754,27 +1787,37 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
       extra={(_v, setValue) => (
         <div className="grid grid-2" style={{ gap: 8, marginTop: 10 }}>
           <AddInline
-            label="دسته جدید"
-            placeholder="مثلاً آلایش، پر مرغ..."
+            label="تعریف دسته جدید"
+            placeholder="مثلاً آلایش، پر، مکمل..."
             onAdd={(val) => {
+              const updated = Array.from(new Set([...baseCats, ...customCats, val]));
+              actions.setSettings({ productCategories: updated });
+              setCustomCats((prev) => Array.from(new Set([...prev, val])));
               setValue('category', val);
+              toast(`دسته «${val}» ایجاد و در فرم انتخاب شد`);
             }}
           />
           <AddInline
-            label="واحد جدید"
+            label="تعریف واحد جدید"
             placeholder="مثلاً کارتن، شانه، کیسه..."
             onAdd={(val) => {
-              actions.setSettings({ units: Array.from(new Set([...(s.settings.units || []), val])) });
+              const updated = Array.from(new Set([...(s.settings.units || []), val]));
+              actions.setSettings({ units: updated });
               setValue('unit', val);
+              toast(`واحد «${val}» اضافه و انتخاب شد`);
             }}
           />
         </div>
       )}
       onSubmit={(v) => {
+        const cat = String(v.category || 'عمومی').trim();
+        const updatedCats = Array.from(new Set([...(s.settings.productCategories || baseCats), cat]));
+        actions.setSettings({ productCategories: updatedCats });
+
         const data: FormValues = {
           ...v,
           name: String(v.name || '').trim(),
-          category: String(v.category || 'عمومی').trim(),
+          category: cat,
           unit: String(v.unit || 'کیلوگرم').trim(),
           defaultPrice: num(v.defaultPrice),
           active: v.active !== false,

@@ -10,6 +10,7 @@ import {
   nextCode,
   num,
   flockSharePercents,
+  flockStats,
   personById,
   personLabel,
   txStockDelta,
@@ -461,12 +462,62 @@ export function TransactionForm({
             }}
           >
             <option value="">عمومی مزرعه</option>
-            {s.flocks.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
+            {s.flocks.map((f) => {
+              const st = flockStats(s, f.id);
+              const aliveText = st ? ` (موجودی زنده: ${n(st.alive)} قطعه)` : '';
+              return (
+                <option key={f.id} value={f.id}>
+                  {f.name} {aliveText}
+                </option>
+              );
+            })}
           </select>
+          {flockId ? (() => {
+            const currentSt = flockStats(s, flockId);
+            if (!currentSt) return null;
+            const currentTxBirdCount = rows.reduce((acc: number, it: TxRow) => {
+              const u = (it.unit || '').trim();
+              if (u === 'قطعه' || u === 'عدد' || u === 'رأس' || u === 'راس') return acc + num(it.qty);
+              return acc;
+            }, 0);
+            const editingOldBirdCount =
+              editing && editing.flockId === flockId
+                ? (editing.items || []).reduce((acc, it) => {
+                    const u = (it.unit || '').trim();
+                    if (u === 'قطعه' || u === 'عدد' || u === 'رأس' || u === 'راس') return acc + num(it.qty);
+                    return acc;
+                  }, 0)
+                : 0;
+            const netBirdChange = currentTxBirdCount - editingOldBirdCount;
+            const remainingAfter = Math.max(0, currentSt.alive - (type === 'sale' ? netBirdChange : -netBirdChange));
+            return (
+              <div
+                style={{
+                  marginTop: 6,
+                  background: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: '#166534',
+                }}
+              >
+                <div>
+                  🐥 موجودی زنده این گله: <b>{n(currentSt.alive)} قطعه</b>
+                </div>
+                {type === 'sale' && currentTxBirdCount > 0 && (
+                  <div style={{ marginTop: 2, color: '#DC2626', fontWeight: 500 }}>
+                    📉 با کسر {n(currentTxBirdCount)} قطعه در این فاکتور ➔ موجودی جدید: <b>{n(remainingAfter)} قطعه</b> می‌شود.
+                  </div>
+                )}
+                {type === 'purchase' && currentTxBirdCount > 0 && (
+                  <div style={{ marginTop: 2, color: '#16A34A', fontWeight: 500 }}>
+                    📈 با ورود {n(currentTxBirdCount)} قطعه به گله ➔ موجودی جدید: <b>{n(currentSt.alive + currentTxBirdCount)} قطعه</b> می‌شود.
+                  </div>
+                )}
+              </div>
+            );
+          })() : null}
         </div>
         <div className="field third">
           <label className="lbl">محل ورود به انبار</label>
