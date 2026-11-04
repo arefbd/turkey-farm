@@ -33,6 +33,7 @@ import type {
   Person,
   Product,
   Settlement,
+  SettlementRow,
   StockMove,
   Settings,
   Totals,
@@ -471,6 +472,16 @@ export function expenseShares(s: AppState, exp: Expense): Record<string, number>
       out[p.id] = p.id === exp.paidBy ? total : 0;
     });
   } else {
+    // تقسیم بر اساس سهم شراکت: اگر هزینه متعلق به گله خاصی است، از درصد سهام همان گله استفاده می‌شود
+    if (exp.flockId) {
+      const fShares = flockSharePercents(s, exp.flockId);
+      if (Object.keys(fShares).length) {
+        partners.forEach((p) => {
+          out[p.id] = (total * (fShares[p.id] || 0)) / 100;
+        });
+        return out;
+      }
+    }
     const t = totalShare(s);
     if (t <= 0) {
       partners.forEach((p) => {
@@ -489,6 +500,7 @@ export function filterExpenses(s: AppState, f: ExpenseFilter = {}): Expense[] {
   let list = s.expenses.slice();
   if (f.cat) list = list.filter((e) => e.category === f.cat);
   if (f.flockId) list = list.filter((e) => e.flockId === f.flockId);
+  if (f.flockIds && f.flockIds.length) list = list.filter((e) => e.flockId && f.flockIds!.includes(e.flockId));
   if (f.partnerId) list = list.filter((e) => e.paidBy === f.partnerId);
   if (f.from) list = list.filter((e) => J.jdn(e.date) >= J.jdn(f.from));
   if (f.to) list = list.filter((e) => J.jdn(e.date) <= J.jdn(f.to));
@@ -508,11 +520,13 @@ export function totals(s: AppState, filter: ExpenseFilter = {}): Totals {
   const exps = filterExpenses(s, filter);
   let sales = s.sales.slice();
   if (filter.flockId) sales = sales.filter((x) => x.flockId === filter.flockId);
+  if (filter.flockIds && filter.flockIds.length) sales = sales.filter((x) => x.flockId && filter.flockIds!.includes(x.flockId));
   if (filter.from) sales = sales.filter((x) => J.jdn(x.date) >= J.jdn(filter.from!));
   if (filter.to) sales = sales.filter((x) => J.jdn(x.date) <= J.jdn(filter.to!));
 
   let txs = s.transactions.slice();
   if (filter.flockId) txs = txs.filter((t) => t.flockId === filter.flockId);
+  if (filter.flockIds && filter.flockIds.length) txs = txs.filter((t) => t.flockId && filter.flockIds!.includes(t.flockId));
   if (filter.from) txs = txs.filter((t) => J.jdn(t.date) >= J.jdn(filter.from!));
   if (filter.to) txs = txs.filter((t) => J.jdn(t.date) <= J.jdn(filter.to!));
 
@@ -678,15 +692,29 @@ export interface OpenItem {
 }
 
 /** فاکتورهای باز: مبلغ فاکتور منهای دریافت/پرداخت‌های مرتبط */
-export function openItems(s: AppState): OpenItem[] {
+export function openItems(s: AppState, filter: ExpenseFilter = {}): OpenItem[] {
+  const targetFlockIds: string[] = [];
+  if (filter.flockId) targetFlockIds.push(filter.flockId);
+  if (filter.flockIds?.length) {
+    filter.flockIds.forEach((id) => {
+      if (!targetFlockIds.includes(id)) targetFlockIds.push(id);
+    });
+  }
+
   const paidByTx: Record<string, number> = {};
   s.payments.forEach((p) => {
     if (!p.transactionId) return;
     paidByTx[p.transactionId] = (paidByTx[p.transactionId] || 0) + num(p.amount);
   });
 
-  return s.transactions
-    .filter((t) => t.type === 'sale' || t.type === 'purchase')
+  let txList = s.transactions.filter((t) => t.type === 'sale' || t.type === 'purchase');
+  if (targetFlockIds.length) {
+    txList = txList.filter((t) => t.flockId && targetFlockIds.includes(t.flockId));
+  }
+  if (filter.from) txList = txList.filter((t) => J.jdn(t.date) >= J.jdn(filter.from!));
+  if (filter.to) txList = txList.filter((t) => J.jdn(t.date) <= J.jdn(filter.to!));
+
+  return txList
     .map((t) => {
       const total = num(t.total);
       // فاکتور نقدی همان لحظه تسویه شده؛ نقد و نسیه فقط به اندازه بیعانه
@@ -724,8 +752,8 @@ export interface ReceivableSummary {
   billed: number;
 }
 
-export function receivables(s: AppState): ReceivableSummary {
-  const items = openItems(s);
+export function receivables(s: AppState, filter: ExpenseFilter = {}): ReceivableSummary {
+  const items = openItems(s, filter);
   const receivable = items
     .filter((i) => i.type === 'sale')
     .reduce((a, i) => a + i.remaining, 0);
@@ -751,9 +779,23 @@ export function receivables(s: AppState): ReceivableSummary {
 }
 
 /** جریان نقدی ماهانه بر اساس اسناد دریافت/پرداخت */
-export function cashSeries(s: AppState, n = 6) {
+export function cashSeries(s: AppState, n = 6, filter: ExpenseFilter = {}) {
+  const targetFlockIds: string[] = [];
+  if (filter.flockId) targetFlockIds.push(filter.flockId);
+  if (filter.flockIds?.length) {
+    filter.flockIds.forEach((id) => {
+      if (!targetFlockIds.includes(id)) targetFlockIds.push(id);
+    });
+  }
+  const txIds = targetFlockIds.length
+    ? new Set(s.transactions.filter((t) => t.flockId && targetFlockIds.includes(t.flockId)).map((t) => t.id))
+    : null;
+
   return J.lastMonths(n).map((m) => {
-    const list = s.payments.filter((p) => p.date.slice(0, 7) === m.key);
+    let list = s.payments.filter((p) => p.date.slice(0, 7) === m.key);
+    if (txIds) {
+      list = list.filter((p) => p.transactionId && txIds.has(p.transactionId));
+    }
     return {
       key: m.key,
       label: m.label,
@@ -871,11 +913,26 @@ export function byCategory(s: AppState, filter: ExpenseFilter = {}): CategorySli
     .sort((a, b) => b.value - a.value);
 }
 
-export function monthlySeries(s: AppState, n = 6) {
+export function monthlySeries(s: AppState, n = 6, filter: ExpenseFilter = {}) {
+  const targetFlockIds: string[] = [];
+  if (filter.flockId) targetFlockIds.push(filter.flockId);
+  if (filter.flockIds?.length) {
+    filter.flockIds.forEach((id) => {
+      if (!targetFlockIds.includes(id)) targetFlockIds.push(id);
+    });
+  }
+
   return J.lastMonths(n).map((m) => {
-    const e = s.expenses.filter((x) => x.date.slice(0, 7) === m.key);
-    const sa = s.sales.filter((x) => x.date.slice(0, 7) === m.key);
-    const txs = s.transactions.filter((t) => t.date.slice(0, 7) === m.key);
+    let e = s.expenses.filter((x) => x.date.slice(0, 7) === m.key);
+    let sa = s.sales.filter((x) => x.date.slice(0, 7) === m.key);
+    let txs = s.transactions.filter((t) => t.date.slice(0, 7) === m.key);
+
+    if (targetFlockIds.length) {
+      e = e.filter((x) => x.flockId && targetFlockIds.includes(x.flockId));
+      sa = sa.filter((x) => x.flockId && targetFlockIds.includes(x.flockId));
+      txs = txs.filter((t) => t.flockId && targetFlockIds.includes(t.flockId));
+    }
+
     const tx = sumTransactions(txs);
     return {
       key: m.key,
@@ -993,24 +1050,48 @@ export function flockStats(s: AppState, id: string): FlockStats | null {
 }
 
 export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement {
+  const targetFlockIds: string[] = [];
+  if (filter.flockId) targetFlockIds.push(filter.flockId);
+  if (filter.flockIds?.length) {
+    filter.flockIds.forEach((id) => {
+      if (!targetFlockIds.includes(id)) targetFlockIds.push(id);
+    });
+  }
+
   const exps = filterExpenses(s, filter);
   const totalExp = sum(exps, 'amount');
 
-  // معاملات در همان بازه فیلتر
+  // معاملات در همان بازه فیلتر و گله‌ها
   let txs = s.transactions.slice();
-  if (filter.flockId) txs = txs.filter((t) => t.flockId === filter.flockId);
+  if (targetFlockIds.length) {
+    txs = txs.filter((t) => t.flockId && targetFlockIds.includes(t.flockId));
+  }
   if (filter.from) txs = txs.filter((t) => J.jdn(t.date) >= J.jdn(filter.from!));
   if (filter.to) txs = txs.filter((t) => J.jdn(t.date) <= J.jdn(filter.to!));
+
+  // فروش‌های مستقیم
+  let sales = s.sales.slice();
+  if (targetFlockIds.length) {
+    sales = sales.filter((x) => x.flockId && targetFlockIds.includes(x.flockId));
+  }
+  if (filter.from) sales = sales.filter((x) => J.jdn(x.date) >= J.jdn(filter.from!));
+  if (filter.to) sales = sales.filter((x) => J.jdn(x.date) <= J.jdn(filter.to!));
+
+  const txIds = targetFlockIds.length ? new Set(txs.map((t) => t.id)) : null;
 
   const payments = s.payments.filter((p) => {
     if (filter.from && J.jdn(p.date) < J.jdn(filter.from)) return false;
     if (filter.to && J.jdn(p.date) > J.jdn(filter.to)) return false;
+    if (txIds && p.transactionId && !txIds.has(p.transactionId)) return false;
     return true;
   });
   const cashIn = payments.filter((p) => p.kind === 'in').reduce((a, p) => a + num(p.amount), 0);
   const cashOut = payments.filter((p) => p.kind === 'out').reduce((a, p) => a + num(p.amount), 0);
 
-  const rows = s.partners.map((p) => {
+  const txTotals = sumTransactions(txs);
+  const totalSalesRevenue = sum(sales, 'amount') + txTotals.revenue;
+
+  const rows: SettlementRow[] = s.partners.map((p) => {
     let shareExp = 0;
     let paidDirect = 0;
     exps.forEach((e) => {
@@ -1018,18 +1099,77 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
       if (e.paidBy === p.id) paidDirect += num(e.amount);
     });
 
+    // سهم از فروش‌های مستقیم s.sales
+    let shareSalesRevenue = 0;
+    sales.forEach((sa) => {
+      if (sa.flockId) {
+        const fPct = flockSharePercents(s, sa.flockId)[p.id] || 0;
+        shareSalesRevenue += (num(sa.amount) * fPct) / 100;
+      } else {
+        const tShare = totalShare(s);
+        const pPct = tShare > 0 ? (num(p.share) / tShare) * 100 : 100 / (s.partners.length || 1);
+        shareSalesRevenue += (num(sa.amount) * pPct) / 100;
+      }
+    });
+
     // سهم شریک از خرید و فروش هر معامله
     let shareBuy = 0;
     let shareSell = 0;
     txs.forEach((t) => {
       const sh = (t.shares || []).find((x) => x.partnerId === p.id);
-      if (!sh) return;
-      const amt = num(sh.amount);
+      let amt = 0;
+      if (sh) {
+        amt = num(sh.amount);
+      } else if (t.flockId) {
+        const fPct = flockSharePercents(s, t.flockId)[p.id] || 0;
+        amt = (num(t.total) * fPct) / 100;
+      } else {
+        const tShare = totalShare(s);
+        const pPct = tShare > 0 ? (num(p.share) / tShare) * 100 : 100 / (s.partners.length || 1);
+        amt = (num(t.total) * pPct) / 100;
+      }
+
       if (t.type === 'purchase') shareBuy += amt;
       else if (t.type === 'purchase_return') shareBuy -= amt;
       else if (t.type === 'sale') shareSell += amt;
       else if (t.type === 'sale_return') shareSell -= amt;
     });
+
+    const shareRevenue = shareSell + shareSalesRevenue;
+    const shareExpenseTotal = shareExp + shareBuy;
+    const shareProfit = shareRevenue - shareExpenseTotal;
+
+    // درصد سهم نمایشی بر اساس گله یا میانگین
+    let effectiveShare = 0;
+    if (targetFlockIds.length === 1) {
+      const fShares = flockSharePercents(s, targetFlockIds[0]);
+      effectiveShare = fShares[p.id] ?? num(p.share);
+    } else if (targetFlockIds.length > 1) {
+      if (totalSalesRevenue > 0) {
+        effectiveShare = (shareRevenue / totalSalesRevenue) * 100;
+      } else {
+        let sumP = 0;
+        targetFlockIds.forEach((fid) => {
+          sumP += flockSharePercents(s, fid)[p.id] || 0;
+        });
+        effectiveShare = sumP / targetFlockIds.length;
+      }
+    } else {
+      if (totalSalesRevenue > 0) {
+        effectiveShare = (shareRevenue / totalSalesRevenue) * 100;
+      } else {
+        const actives = activeFlocks(s);
+        if (actives.length > 0) {
+          let sumP = 0;
+          actives.forEach((f) => {
+            sumP += flockSharePercents(s, f.id)[p.id] || 0;
+          });
+          effectiveShare = sumP / actives.length;
+        } else {
+          effectiveShare = num(p.share);
+        }
+      }
+    }
 
     const capital = sum(
       s.contributions.filter((c) => c.partnerId === p.id),
@@ -1058,7 +1198,7 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
     return {
       id: p.id,
       name: p.name,
-      share: num(p.share),
+      share: effectiveShare,
       color: p.color,
       capital,
       paidDirect,
@@ -1068,6 +1208,9 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
       shareTx,
       paidOut,
       received,
+      shareRevenue,
+      shareExpenseTotal,
+      shareProfit,
       balance: capital + paidDirect + paidOut - received - shareExp + shareTx,
     };
   });

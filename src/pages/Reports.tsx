@@ -26,44 +26,65 @@ export function Reports() {
   const s = useApp();
   const ui = useUI();
   const [period, setPeriod] = useState<Period>('all');
+  const [selectedFlockIds, setSelectedFlockIds] = useState<string[]>([]);
+  const [isMultiMode, setIsMultiMode] = useState<boolean>(false);
 
   const filter: ExpenseFilter = (() => {
+    const f: ExpenseFilter = {};
+    if (selectedFlockIds.length === 1) {
+      f.flockId = selectedFlockIds[0];
+    } else if (selectedFlockIds.length > 1) {
+      f.flockIds = selectedFlockIds;
+    }
     const t = parse(today());
-    if (!t) return {};
-    if (period === 'month') return { from: `${pad(t.jy)}/${pad(t.jm)}/01` };
-    if (period === '3m') {
+    if (!t) return f;
+    if (period === 'month') f.from = `${pad(t.jy)}/${pad(t.jm)}/01`;
+    else if (period === '3m') {
       let m = t.jm - 3;
       let y = t.jy;
       while (m <= 0) {
         m += 12;
         y--;
       }
-      return { from: `${pad(y)}/${pad(m)}/01` };
+      f.from = `${pad(y)}/${pad(m)}/01`;
+    } else if (period === 'year') {
+      f.from = `${pad(t.jy)}/01/01`;
     }
-    if (period === 'year') return { from: `${pad(t.jy)}/01/01` };
-    return {};
+    return f;
   })();
 
   const t = totals(s, filter);
   const cats = byCategory(s, filter);
-  const series = monthlySeries(s, 6);
-  const cash = cashSeries(s, 6);
-  const rec = receivables(s);
+  const series = monthlySeries(s, 6, filter);
+  const cash = cashSeries(s, 6, filter);
+  const rec = receivables(s, filter);
   const settle = settlement(s, filter);
-  const active = activeFlocks(s)[0];
+
+  const selectedFlock = selectedFlockIds.length === 1 ? s.flocks.find((f) => f.id === selectedFlockIds[0]) : null;
+  const active = selectedFlock || activeFlocks(s)[0];
   const fs = active ? flockStats(s, active.id) : null;
 
   const periodLabel = { all: 'کل دوره', month: 'ماه جاری', '3m': '۳ ماه اخیر', year: 'سال جاری' }[
     period
   ];
 
+  const flockFilterLabel =
+    selectedFlockIds.length === 0
+      ? 'کل مزرعه (همه گله‌ها)'
+      : selectedFlockIds.length === 1
+      ? `گله ${selectedFlock?.name || ''}`
+      : `مجموع ${selectedFlockIds.length} گله انتخابی`;
+
   const exportReport = () => {
     const rows: Array<Array<string | number>> = [];
     rows.push(['گزارش مالی مزرعه', s.settings.farmName]);
+    rows.push(['فیلتر گله', flockFilterLabel]);
+    rows.push(['بازه زمانی', periodLabel]);
     rows.push(['تاریخ گزارش', today()]);
     rows.push([]);
     rows.push(['درآمد کل', t.revenue]);
     rows.push(['هزینه کل', t.expenses]);
+    rows.push(['بهای خرید', t.purchase]);
     rows.push(['سود / زیان', t.profit]);
     rows.push(['حاشیه سود (٪)', t.margin.toFixed(2)]);
     rows.push([]);
@@ -72,9 +93,16 @@ export function Reports() {
       rows.push([c.label, Math.round(c.value), (t.expenses ? (c.value / t.expenses) * 100 : 0).toFixed(1)]);
     });
     rows.push([]);
-    rows.push(['شریک', 'سهم٪', 'آورده', 'سهم از هزینه', 'مانده']);
+    rows.push(['شریک', 'درصد سهم', 'سهم از درآمد', 'سهم از هزینه', 'سود/زیان سهم', 'مانده حساب']);
     settle.rows.forEach((r) => {
-      rows.push([r.name, r.share, Math.round(r.capital), Math.round(r.shareExp), Math.round(r.balance)]);
+      rows.push([
+        r.name,
+        r.share.toFixed(2),
+        Math.round(r.shareRevenue),
+        Math.round(r.shareExpenseTotal),
+        Math.round(r.shareProfit),
+        Math.round(r.balance),
+      ]);
     });
     download(`report-${today().replace(/\//g, '-')}.csv`, toCsv(rows));
     ui.toast('گزارش دانلود شد');
@@ -84,7 +112,7 @@ export function Reports() {
     <>
       <PageHead
         title="گزارش‌ها و تحلیل مالی"
-        sub="تصویر کامل عملکرد مالی و فنی مزرعه"
+        sub="تصویر کامل عملکرد مالی و فنی مزرعه با امکان تفکیک به ازای هر گله"
         actions={
           <>
             <button className="btn" onClick={exportReport}>
@@ -96,6 +124,72 @@ export function Reports() {
           </>
         }
       />
+
+      {/* نوار انتخاب و فیلتر گله‌ها */}
+      <div className="card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>🎯 تفکیک بر اساس گله:</span>
+            <span className="badge purple" style={{ fontSize: 12, padding: '4px 10px' }}>
+              {flockFilterLabel}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              className={`btn sm ${isMultiMode ? 'primary' : 'ghost'}`}
+              onClick={() => setIsMultiMode(!isMultiMode)}
+              title="امکان انتخاب همزمان چند گله برای مشاهده سرجمع آنها"
+            >
+              {isMultiMode ? '✓ حالت چند گله‌ای فعال' : '＋ انتخاب چند گله'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+          <button
+            type="button"
+            className={`btn sm ${selectedFlockIds.length === 0 ? 'primary' : ''}`}
+            onClick={() => setSelectedFlockIds([])}
+            style={{ borderRadius: 20 }}
+          >
+            🌐 همه گله‌ها (کل مزرعه)
+          </button>
+          {s.flocks.map((f) => {
+            const isSelected = selectedFlockIds.includes(f.id);
+            return (
+              <button
+                key={f.id}
+                type="button"
+                className={`btn sm ${isSelected ? 'primary' : ''}`}
+                style={{
+                  borderRadius: 20,
+                  border: isSelected ? 'none' : '1px solid var(--border)',
+                  background: isSelected ? undefined : '#FFF',
+                }}
+                onClick={() => {
+                  if (isMultiMode) {
+                    if (isSelected) {
+                      setSelectedFlockIds(selectedFlockIds.filter((id) => id !== f.id));
+                    } else {
+                      setSelectedFlockIds([...selectedFlockIds, f.id]);
+                    }
+                  } else {
+                    if (isSelected) {
+                      setSelectedFlockIds([]);
+                    } else {
+                      setSelectedFlockIds([f.id]);
+                    }
+                  }
+                }}
+              >
+                🐥 {f.name}
+                {f.status === 'closed' ? ' (خاتمه‌یافته)' : ''}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <Chips
         items={[
@@ -109,7 +203,7 @@ export function Reports() {
       />
 
       <div className="card mt">
-        <SectionHead title="صورت سود و زیان" sub={periodLabel} />
+        <SectionHead title="صورت سود و زیان" sub={`${flockFilterLabel} — ${periodLabel}`} />
         <div className="grid grid-3" style={{ gap: 10 }}>
           <div className="stat" style={{ boxShadow: 'none', background: '#F1FCF6', borderColor: '#D1FAE5' }}>
             <div className="stat-label">درآمد فروش</div>
@@ -393,13 +487,22 @@ export function Reports() {
       </div>
 
       <div className="card mt">
-        <SectionHead title="تقسیم سود و زیان بین شرکا" sub="بر اساس درصد سهم" />
+        <SectionHead
+          title="تقسیم سود و زیان بین شرکا"
+          sub={
+            selectedFlockIds.length === 1
+              ? `بر اساس سهم واقعی شرکا در ${flockFilterLabel}`
+              : selectedFlockIds.length > 1
+              ? `بر اساس سهم شرکا در ${flockFilterLabel}`
+              : 'بر اساس درصد سهام شرکا در کل مزرعه'
+          }
+        />
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
               <tr>
                 <th>شریک</th>
-                <th>سهم</th>
+                <th>درصد سهم</th>
                 <th>سهم از هزینه</th>
                 <th>سهم از درآمد</th>
                 <th>سود / زیان سهم</th>
@@ -408,21 +511,23 @@ export function Reports() {
             </thead>
             <tbody>
               {settle.rows.map((r) => {
-                const shareProfit = (t.profit * r.share) / 100;
-                const shareRev = (t.revenue * r.share) / 100;
                 return (
                   <tr key={r.id}>
                     <td>
                       <b>{r.name}</b>
                     </td>
-                    <td>{n(r.share)}٪</td>
-                    <td className="num-cell">{n(r.shareExp)}</td>
-                    <td className="num-cell">{n(shareRev)}</td>
+                    <td>
+                      <b style={{ color: 'var(--primary, #6D28D9)' }}>{pct(r.share, 2)}</b>
+                    </td>
+                    <td className="num-cell">{n(r.shareExpenseTotal)}</td>
+                    <td className="num-cell" style={{ color: '#059669' }}>
+                      {n(r.shareRevenue)}
+                    </td>
                     <td
                       className="num-cell"
-                      style={{ color: shareProfit >= 0 ? '#059669' : '#DC2626' }}
+                      style={{ color: r.shareProfit >= 0 ? '#059669' : '#DC2626' }}
                     >
-                      <b>{n(shareProfit)}</b>
+                      <b>{n(r.shareProfit)}</b>
                     </td>
                     <td className="num-cell" style={{ color: r.balance >= 0 ? '#059669' : '#DC2626' }}>
                       {n(r.balance)}
@@ -434,13 +539,15 @@ export function Reports() {
           </table>
         </div>
         <div className="hint" style={{ marginTop: 8 }}>
-          سود به نسبت درصد سهام بین شرکا تقسیم می‌شود. مانده حساب بر اساس آورده و پرداخت‌های واقعی هر
-          شریک محاسبه شده است.
+          سهم هر شریک، سهم از درآمد، سهم از هزینه و سود/زیان بر اساس گله(های) انتخاب‌شده به صورت مجزا محاسبه شده است.
         </div>
       </div>
 
       <div className="card mt">
-        <SectionHead title="مقایسه عملکرد گله‌ها" />
+        <SectionHead
+          title="مقایسه عملکرد گله‌ها"
+          sub="روی هر گله کلیک کنید تا کلیه شاخص‌ها، هزینه‌ها و سهم شرکا برای آن گله تفکیک شود"
+        />
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
@@ -453,16 +560,40 @@ export function Reports() {
                 <th>هزینه</th>
                 <th>درآمد</th>
                 <th>سود</th>
+                <th>وضعیت فیلتر</th>
               </tr>
             </thead>
             <tbody>
               {s.flocks.map((f) => {
                 const st = flockStats(s, f.id);
                 if (!st) return null;
+                const isSelected = selectedFlockIds.includes(f.id);
                 return (
-                  <tr key={f.id}>
+                  <tr
+                    key={f.id}
+                    style={{
+                      background: isSelected ? '#F5F3FF' : undefined,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      if (isMultiMode) {
+                        if (isSelected) {
+                          setSelectedFlockIds(selectedFlockIds.filter((id) => id !== f.id));
+                        } else {
+                          setSelectedFlockIds([...selectedFlockIds, f.id]);
+                        }
+                      } else {
+                        if (isSelected) {
+                          setSelectedFlockIds([]);
+                        } else {
+                          setSelectedFlockIds([f.id]);
+                        }
+                      }
+                    }}
+                  >
                     <td>
                       <b>{f.name}</b>
+                      {f.status === 'closed' ? ' (خاتمه‌یافته)' : ''}
                     </td>
                     <td>{n(st.age)} روز</td>
                     <td className="num-cell">{n(st.alive)}</td>
@@ -472,6 +603,11 @@ export function Reports() {
                     <td className="num-cell">{short(st.revenue)}</td>
                     <td className="num-cell" style={{ color: st.profit >= 0 ? '#059669' : '#DC2626' }}>
                       {short(st.profit)}
+                    </td>
+                    <td>
+                      <span className={`badge ${isSelected ? 'purple' : 'gray'}`}>
+                        {isSelected ? '✓ انتخاب‌شده' : 'انتخاب'}
+                      </span>
                     </td>
                   </tr>
                 );

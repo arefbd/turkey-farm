@@ -1,18 +1,19 @@
 /** شرکا، آورده‌ها، تسویه حساب و معاملات دلالی */
+import { useState } from 'react';
 import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Avatar, Bar, Empty, PageHead, Row, SectionHead, Stat } from '../components/ui';
 import {
   actions,
+  flockSharePercents,
   num,
   partnerById,
   settlement,
   suggestTransfers,
-  totalShare,
   useApp,
 } from '../data/store';
 import { format } from '../lib/jalali';
-import { money, n, short } from '../lib/format';
+import { money, n, pct, short } from '../lib/format';
 import { ContributionForm, DealForm, PartnerForm } from '../forms';
 
 const dealProfit = (d: { sellPrice: number; buyPrice: number; qty: number; commission: number }) =>
@@ -21,9 +22,16 @@ const dealProfit = (d: { sellPrice: number; buyPrice: number; qty: number; commi
 export function Partners() {
   const s = useApp();
   const ui = useUI();
+  const [selectedFlockId, setSelectedFlockId] = useState<string>('all');
 
-  const settle = settlement(s);
-  const shareTotal = totalShare(s);
+  const filter = selectedFlockId !== 'all' ? { flockId: selectedFlockId } : {};
+  const settle = settlement(s, filter);
+  const selectedFlock = selectedFlockId !== 'all' ? s.flocks.find((f) => f.id === selectedFlockId) : null;
+  const flockShares = selectedFlock ? flockSharePercents(s, selectedFlock.id) : null;
+  const shareTotal = flockShares
+    ? Object.values(flockShares).reduce((a, b) => a + b, 0)
+    : 100;
+
   const totalCapital = settle.rows.reduce((a, r) => a + r.capital, 0);
   const deals = s.deals.slice().sort((a, b) => b.date.localeCompare(a.date));
   const totalDealProfit = deals.reduce((a, d) => a + dealProfit(d), 0);
@@ -33,7 +41,7 @@ export function Partners() {
     <>
       <PageHead
         title="شرکا و تسویه حساب"
-        sub="مدیریت سهام، آورده‌ها و تقسیم هزینه‌ها بین شرکا"
+        sub="مدیریت سهام، آورده‌ها و تقسیم هزینه‌ها بین شرکا با امکان تفکیک به ازای هر گله"
         actions={
           <>
             <button className="btn" onClick={() => ui.open(<ContributionForm onClose={ui.close} />)}>
@@ -46,12 +54,56 @@ export function Partners() {
         }
       />
 
-      {Math.abs(shareTotal - 100) > 0.5 ? (
+      {/* نوار انتخاب گله مبنای تسویه */}
+      <div className="card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>🎯 گله مبنای تسویه:</span>
+            <span className="badge purple" style={{ fontSize: 12, padding: '4px 10px' }}>
+              {selectedFlock ? `گله ${selectedFlock.name}` : 'کل مزرعه (همه گله‌ها)'}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {selectedFlock
+              ? `درصد سهام بر اساس سهم هر شریک در گله ${selectedFlock.name}`
+              : 'نمایش سرجمع کلیه حساب‌ها و معاملات'}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+          <button
+            type="button"
+            className={`btn sm ${selectedFlockId === 'all' ? 'primary' : ''}`}
+            onClick={() => setSelectedFlockId('all')}
+            style={{ borderRadius: 20 }}
+          >
+            🌐 همه گله‌ها (کل مزرعه)
+          </button>
+          {s.flocks.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`btn sm ${selectedFlockId === f.id ? 'primary' : ''}`}
+              style={{
+                borderRadius: 20,
+                border: selectedFlockId === f.id ? 'none' : '1px solid var(--border)',
+                background: selectedFlockId === f.id ? undefined : '#FFF',
+              }}
+              onClick={() => setSelectedFlockId(f.id)}
+            >
+              🐥 {f.name}
+              {f.status === 'closed' ? ' (خاتمه‌یافته)' : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedFlock && Math.abs(shareTotal - 100) > 0.5 ? (
         <div className="card" style={{ background: '#FFFBEB', borderColor: '#FDE68A', boxShadow: 'none' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Icon name="alert" size={18} />
             <div>
-              <b style={{ fontSize: 12.5 }}>جمع سهم شرکا {n(shareTotal, 1)}٪ است</b>
+              <b style={{ fontSize: 12.5 }}>جمع سهم شرکا در این گله {n(shareTotal, 1)}٪ است</b>
               <div className="hint">برای تقسیم دقیق هزینه‌ها، مجموع درصدها باید ۱۰۰ باشد.</div>
             </div>
           </div>
@@ -59,7 +111,7 @@ export function Partners() {
       ) : null}
 
       <div className="stats">
-        <Stat icon="👥" label="تعداد شرکا" value={n(s.partners.length)} sub={`جمع سهام ${n(shareTotal, 0)}٪`} />
+        <Stat icon="👥" label="تعداد شرکا" value={n(s.partners.length)} sub={selectedFlock ? `سهم گله ${n(shareTotal, 0)}٪` : 'کل شرکا'} />
         <Stat icon="💰" label="سرمایه آورده‌شده" value={short(totalCapital)} unit="تومان" />
         <Stat icon="💸" label="هزینه‌های تقسیم‌شده" value={short(settle.totalExp)} unit="تومان" />
         <Stat
@@ -78,6 +130,7 @@ export function Partners() {
             capital: 0,
             paidDirect: 0,
             shareExp: 0,
+            share: 0,
           };
           const pos = row.balance >= 0;
           const pDeals = deals.filter((d) => d.partnerId === p.id);
@@ -92,11 +145,11 @@ export function Partners() {
                     {p.phone ? ' · ' + p.phone : ''}
                   </span>
                 </div>
-                <span className="share-pill">{n(p.share)}٪</span>
+                <span className="share-pill">{n(row.share, 1)}٪</span>
               </div>
 
               <div className="progress-row">
-                <Bar value={p.share} color={p.color} />
+                <Bar value={row.share} color={p.color} />
               </div>
 
               <div className="grid grid-2" style={{ gap: 8 }}>
@@ -167,7 +220,14 @@ export function Partners() {
       </div>
 
       <div className="card mt">
-        <SectionHead title="جدول تسویه حساب" sub="بر اساس هزینه‌های پرداخت‌شده و سهم هر شریک" />
+        <SectionHead
+          title="جدول تسویه حساب"
+          sub={
+            selectedFlock
+              ? `بر اساس هزینه‌های پرداخت‌شده و سهم هر شریک در گله ${selectedFlock.name}`
+              : 'بر اساس کل هزینه‌ها و معاملات مزرعه'
+          }
+        />
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
@@ -190,7 +250,9 @@ export function Partners() {
                     <td>
                       <b>{r.name}</b>
                     </td>
-                    <td>{n(r.share)}٪</td>
+                    <td>
+                      <b style={{ color: 'var(--primary, #6D28D9)' }}>{pct(r.share, 2)}</b>
+                    </td>
                     <td className="num-cell">{n(r.capital)}</td>
                     <td className="num-cell">{n(r.paidDirect)}</td>
                     <td className="num-cell">{n(r.shareExp)}</td>
@@ -216,7 +278,7 @@ export function Partners() {
                 <td>
                   <b>جمع</b>
                 </td>
-                <td>{n(shareTotal)}٪</td>
+                <td>{pct(shareTotal, 1)}</td>
                 <td className="num-cell">{n(totalCapital)}</td>
                 <td className="num-cell">—</td>
                 <td className="num-cell">{n(settle.totalExp)}</td>

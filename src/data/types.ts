@@ -401,6 +401,12 @@ export interface SettlementRow {
   paidOut: number;
   /** دریافت‌هایی که این شریک به دست گرفته (نه صندوق) */
   received: number;
+  /** سهم از کل درآمد فروش‌ها و معاملات */
+  shareRevenue: number;
+  /** سهم از کل هزینه‌ها و خریدهای گله */
+  shareExpenseTotal: number;
+  /** سود خالص سهم شریک (درآمد منهای هزینه) */
+  shareProfit: number;
   balance: number;
 }
 
@@ -459,6 +465,7 @@ export interface AlertItem {
 export interface ExpenseFilter {
   cat?: string;
   flockId?: string;
+  flockIds?: string[];
   partnerId?: string;
   from?: string;
   to?: string;
