@@ -10,6 +10,7 @@ import { short } from './lib/format';
 import { Dashboard } from './pages/Dashboard';
 import { Flocks } from './pages/Flocks';
 import { FlockDetail } from './pages/FlockDetail';
+import { Daily } from './pages/Daily';
 import { Expenses } from './pages/Expenses';
 import { Transactions } from './pages/Transactions';
 import { Payments } from './pages/Payments';
@@ -41,19 +42,20 @@ interface NavItem {
 
 export const NAV: NavItem[] = [
   { id: 'dashboard', label: 'داشبورد', icon: 'home', group: 'اصلی' },
-  { id: 'flocks', label: 'گله‌ها و ثبت روزانه', icon: 'egg', group: 'اصلی' },
-  { id: 'transactions', label: 'معاملات (خرید و فروش)', icon: 'receipt', group: 'مالی' },
-  { id: 'expenses', label: 'هزینه‌ها', icon: 'wallet', group: 'مالی' },
-  { id: 'accounts', label: 'حساب‌ها', icon: 'bank', group: 'مالی' },
-  { id: 'payments', label: 'دریافت‌ها و پرداخت‌ها', icon: 'exchange', group: 'مالی' },
-  { id: 'persons', label: 'اشخاص (مشتری/تامین‌کننده)', icon: 'users', group: 'مالی' },
-  { id: 'partners', label: 'شرکا و تسویه', icon: 'scale', group: 'مالی' },
-  { id: 'products', label: 'کالاها و محصولات', icon: 'tag', group: 'عملیات' },
-  { id: 'inventory', label: 'انبار', icon: 'box', group: 'عملیات' },
-  { id: 'feed', label: 'خوراک و فرمول', icon: 'feed', group: 'عملیات' },
-  { id: 'tasks', label: 'کارها و یادآور', icon: 'check', group: 'عملیات' },
-  { id: 'reports', label: 'گزارش‌ها', icon: 'chart', group: 'تحلیل' },
-  { id: 'settings', label: 'تنظیمات', icon: 'gear', group: 'تحلیل' },
+  { id: 'flocks', label: 'گله‌ها', icon: 'egg', group: 'اصلی' },
+  { id: 'daily', label: 'ثبت روزانه', icon: 'calendar', group: 'اصلی' },
+  { id: 'persons', label: 'اشخاص', icon: 'users', group: 'اصلی' },
+  { id: 'partners', label: 'شرکا و تسویه', icon: 'scale', group: 'اصلی' },
+  { id: 'products', label: 'کالاها', icon: 'tag', group: 'اصلی' },
+  { id: 'accounts', label: 'حساب‌ها', icon: 'bank', group: 'اصلی' },
+  { id: 'transactions', label: 'معاملات (خرید و فروش)', icon: 'receipt', group: 'اصلی' },
+  { id: 'payments', label: 'دریافت‌ها و پرداخت‌ها', icon: 'exchange', group: 'اصلی' },
+  { id: 'expenses', label: 'هزینه‌ها', icon: 'wallet', group: 'اصلی' },
+  { id: 'tasks', label: 'یادداشت‌ها و یادآوری‌ها', icon: 'check', group: 'اصلی' },
+  { id: 'inventory', label: 'انبار', icon: 'box', group: 'اصلی' },
+  { id: 'feed', label: 'خوراک و فرمول', icon: 'feed', group: 'اصلی' },
+  { id: 'reports', label: 'گزارش‌ها', icon: 'chart', group: 'اصلی' },
+  { id: 'settings', label: 'تنظیمات', icon: 'gear', group: 'اصلی' },
 ];
 
 const TITLES: Record<string, string> = Object.fromEntries(NAV.map((x) => [x.id, x.label]));
@@ -82,6 +84,8 @@ function Page({ name, param }: { name: string; param: string }) {
       return <Flocks />;
     case 'flock':
       return <FlockDetail id={param} />;
+    case 'daily':
+      return <Daily />;
     case 'expenses':
       return <Expenses />;
     case 'sales':

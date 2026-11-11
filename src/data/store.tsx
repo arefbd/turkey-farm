@@ -47,6 +47,7 @@ export function num(v: unknown): number {
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
   let raw = String(v == null ? 0 : v);
   raw = J.toEn(raw);
+  raw = raw.replace(/[/٫]/g, '.');
   const n = parseFloat(raw.replace(/[^\d.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
 }
@@ -369,6 +370,87 @@ export const actions = {
 
     if (!moves.length) return;
     commit({ ...state, inventory, stockMoves: [...moves, ...state.stockMoves] });
+  },
+
+  deleteStockMove(moveId: string): void {
+    const move = state.stockMoves.find((m) => m.id === moveId);
+    if (!move) return;
+
+    const reverseDelta = move.kind === 'in' ? -num(move.qty) : num(move.qty);
+    const inventory = state.inventory.map((it) => {
+      if (it.id === move.itemId || it.name.trim() === move.itemName.trim()) {
+        const newQty = Math.max(0, num(it.qty) + reverseDelta);
+        return { ...it, qty: newQty };
+      }
+      return it;
+    });
+
+    const stockMoves = state.stockMoves.filter((m) => m.id !== moveId);
+    commit({ ...state, inventory, stockMoves });
+  },
+
+  updateStockMove(
+    moveId: string,
+    patch: {
+      date?: string;
+      qty?: number;
+      kind?: 'in' | 'out';
+      reason?: string;
+      note?: string;
+    },
+  ): void {
+    const move = state.stockMoves.find((m) => m.id === moveId);
+    if (!move) return;
+
+    const oldEffective = move.kind === 'in' ? num(move.qty) : -num(move.qty);
+    const newQty = patch.qty !== undefined ? num(patch.qty) : num(move.qty);
+    const newKind = patch.kind !== undefined ? patch.kind : move.kind;
+    const newEffective = newKind === 'in' ? newQty : -newQty;
+    const netDelta = newEffective - oldEffective;
+
+    const inventory = state.inventory.map((it) => {
+      if (it.id === move.itemId || it.name.trim() === move.itemName.trim()) {
+        const updatedQty = Math.max(0, num(it.qty) + netDelta);
+        return { ...it, qty: updatedQty };
+      }
+      return it;
+    });
+
+    const stockMoves = state.stockMoves.map((m) => {
+      if (m.id !== moveId) return m;
+      return {
+        ...m,
+        date: patch.date ?? m.date,
+        qty: newQty,
+        kind: newKind,
+        reason: patch.reason ?? m.reason,
+        note: patch.note ?? m.note,
+        after: Math.max(0, num(m.before) + newEffective),
+      };
+    });
+
+    commit({ ...state, inventory, stockMoves });
+  },
+
+  addInitialStockMove(item: { id?: string; name: string; unit: string; qty: number; code?: string }, date: string, note?: string): void {
+    if (num(item.qty) <= 0) return;
+    const move: StockMove = {
+      id: uid(),
+      createdAt: Date.now(),
+      date: date || J.today(),
+      itemId: item.id || uid(),
+      itemName: item.name,
+      unit: item.unit,
+      kind: 'in',
+      qty: num(item.qty),
+      before: 0,
+      after: num(item.qty),
+      reason: 'موجودی اولیه کالا',
+      refType: 'manual',
+      refId: item.code || '',
+      note: note || 'ثبت همزمان با تعریف اولیه کالا در انبار',
+    };
+    commit({ ...state, stockMoves: [move, ...state.stockMoves] });
   },
 
   setSettings(patch: Partial<Settings>): void {

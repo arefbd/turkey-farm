@@ -87,12 +87,14 @@ export const PERSON_TYPES: Array<{ value: string; label: string }> = [
   { value: 'customer', label: 'مشتری' },
   { value: 'supplier', label: 'تامین‌کننده' },
   { value: 'both', label: 'مشتری و تامین‌کننده' },
+  { value: 'service', label: 'خدمات دهندگان' },
 ];
 
 export const PERSON_TYPE_LABEL: Record<string, string> = {
   customer: 'مشتری',
   supplier: 'تامین‌کننده',
   both: 'مشتری و تامین‌کننده',
+  service: 'خدمات دهندگان',
 };
 
 /* ------------------------------ معاملات ------------------------------- */

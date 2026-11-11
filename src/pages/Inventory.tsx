@@ -7,11 +7,125 @@ import { actions, num, stockMovesFor, useApp } from '../data/store';
 import { format, today } from '../lib/jalali';
 import { n, short } from '../lib/format';
 import { InventoryItemForm, InventoryMoveForm } from '../forms';
+import type { StockMove } from '../data/types';
+
+function EditMoveModal({
+  move,
+  onClose,
+}: {
+  move: StockMove;
+  onClose: () => void;
+}) {
+  const { toast } = useUI();
+  const [date, setDate] = useState(move.date);
+  const [qty, setQty] = useState(move.qty);
+  const [kind, setKind] = useState<'in' | 'out'>(move.kind);
+  const [reason, setReason] = useState(move.reason || 'سایر');
+  const [note, setNote] = useState(move.note || '');
+
+  const save = () => {
+    if (num(qty) <= 0) {
+      toast('مقدار باید بیشتر از صفر باشد', 'error');
+      return;
+    }
+    actions.updateStockMove(move.id, {
+      date,
+      qty: num(qty),
+      kind,
+      reason,
+      note,
+    });
+    toast('حرکت انبار ویرایش شد و موجودی اصلاح گردید');
+    onClose();
+  };
+
+  return (
+    <Modal
+      title={`ویرایش گردش کالا — ${move.itemName}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" type="button" onClick={onClose}>
+            انصراف
+          </button>
+          <button className="btn primary" type="button" onClick={save}>
+            ذخیره تغییرات
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <div className="field half">
+          <label className="lbl">نوع تراکنش</label>
+          <select
+            className="input"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as 'in' | 'out')}
+          >
+            <option value="in">ورود به انبار</option>
+            <option value="out">خروج از انبار</option>
+          </select>
+        </div>
+        <div className="field half">
+          <label className="lbl">تاریخ</label>
+          <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div className="field half">
+          <label className="lbl">مقدار ({move.unit})</label>
+          <input
+            className="input num"
+            type="number"
+            value={qty}
+            onChange={(e) => setQty(num(e.target.value))}
+          />
+        </div>
+        <div className="field half">
+          <label className="lbl">دلیل حرکت</label>
+          <select
+            className="input"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          >
+            <option value="خرید">خرید</option>
+            <option value="مصرف روزانه">مصرف روزانه</option>
+            <option value="مصرف تولید دان">مصرف تولید دان</option>
+            <option value="اصلاح شمارش">اصلاح شمارش</option>
+            <option value="موجودی اولیه کالا">موجودی اولیه کالا</option>
+            <option value="مرجوعی">مرجوعی</option>
+            <option value="تلفات / ضایعات">تلفات / ضایعات</option>
+            <option value="سایر">سایر</option>
+          </select>
+        </div>
+        <div className="field full">
+          <label className="lbl">توضیح</label>
+          <input
+            className="input"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="یادداشت اختیاری"
+          />
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 export function Inventory() {
   const s = useApp();
   const ui = useUI();
   const [traceId, setTraceId] = useState<string | null>(null);
+  const [editingMove, setEditingMove] = useState<StockMove | null>(null);
+
+  const deleteMove = async (m: StockMove) => {
+    const ok = await ui.confirm(
+      `این سطر گردش انبار (${m.kind === 'in' ? 'ورود' : 'خروج'} ${n(m.qty)} ${m.unit} ${m.itemName}) حذف شود؟ موجودی کالا بر اساس قبل از این حرکت بازگردانده می‌شود.`,
+      { danger: true, ok: 'حذف سطر' },
+    );
+    if (ok) {
+      actions.deleteStockMove(m.id);
+      ui.toast('سطر گردش انبار حذف و موجودی کالا اصلاح شد');
+    }
+  };
 
   const items = s.inventory
     .slice()
@@ -192,13 +306,31 @@ export function Inventory() {
                     {m.refId ? ` · سند ${m.refId}` : ''}
                   </div>
                 </div>
-                <div className="row-side">
-                  <div className={'row-amt ' + (m.kind === 'in' ? 'pos' : 'neg')}>
-                    {m.kind === 'in' ? '+' : '−'}
-                    {n(m.qty)} {m.unit}
+                <div className="row-side" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div>
+                    <div className={'row-amt ' + (m.kind === 'in' ? 'pos' : 'neg')}>
+                      {m.kind === 'in' ? '+' : '−'}
+                      {n(m.qty)} {m.unit}
+                    </div>
+                    <div className="row-date">
+                      {n(m.before)} → {n(m.after)}
+                    </div>
                   </div>
-                  <div className="row-date">
-                    {n(m.before)} → {n(m.after)}
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button
+                      className="icon-btn sm"
+                      title="ویرایش این حرکت انبار"
+                      onClick={() => setEditingMove(m)}
+                    >
+                      <Icon name="edit" size={13} />
+                    </button>
+                    <button
+                      className="icon-btn sm"
+                      title="حذف این حرکت انبار"
+                      onClick={() => deleteMove(m)}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -253,6 +385,7 @@ export function Inventory() {
                     <th>مقدار</th>
                     <th>موجودی</th>
                     <th>دلیل</th>
+                    <th style={{ width: 64 }}>عملیات</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,6 +407,24 @@ export function Inventory() {
                         {m.reason}
                         {m.refId ? <span className="hint"> · {m.refId}</span> : null}
                       </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          <button
+                            className="icon-btn sm"
+                            title="ویرایش"
+                            onClick={() => setEditingMove(m)}
+                          >
+                            <Icon name="edit" size={12} />
+                          </button>
+                          <button
+                            className="icon-btn sm"
+                            title="حذف"
+                            onClick={() => deleteMove(m)}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -286,6 +437,13 @@ export function Inventory() {
             </div>
           )}
         </Modal>
+      ) : null}
+
+      {editingMove ? (
+        <EditMoveModal
+          move={editingMove}
+          onClose={() => setEditingMove(null)}
+        />
       ) : null}
     </>
   );

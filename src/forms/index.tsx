@@ -1077,9 +1077,12 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
         cat: INVENTORY_CATS[0],
         unit: UNITS[0],
         qty: 0,
+        entryDate: today(),
         min: 0,
         pricePerKg: 0,
         active: true,
+        recordExpense: false,
+        flockId: '',
         note: '',
         expiry: '',
       };
@@ -1096,6 +1099,23 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
     { name: 'qty', label: 'موجودی فعلی', type: 'number', col: 'third' },
     { name: 'min', label: 'حد هشدار', type: 'number', col: 'third' },
     { name: 'pricePerKg', label: 'قیمت واحد (تومان)', type: 'money', col: 'third' },
+    ...(!editing
+      ? [
+          {
+            name: 'entryDate',
+            label: 'تاریخ ورود / موجودی اولیه',
+            type: 'date' as const,
+            col: 'half' as const,
+            hint: 'جهت درج در کاردکس گردش انبار',
+          },
+          {
+            name: 'recordExpense',
+            label: 'آیا خرید اولیه به عنوان هزینه در حسابداری ثبت شود؟',
+            type: 'checkbox' as const,
+            col: 'full' as const,
+          },
+        ]
+      : []),
     {
       name: 'expiry',
       label: 'تاریخ انقضا',
@@ -1168,8 +1188,31 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
           pricePerKg: num(v.pricePerKg),
           active: v.active !== false,
         };
-        if (editing) actions.update('inventory', editing.id, asPatch<InventoryItem>(data));
-        else actions.add('inventory', asNew<InventoryItem>(data));
+        if (editing) {
+          actions.update('inventory', editing.id, asPatch<InventoryItem>(data));
+        } else {
+          const newItem = asNew<InventoryItem>(data);
+          actions.add('inventory', newItem);
+          if (num(newItem.qty) > 0) {
+            actions.addInitialStockMove(newItem, String(v.entryDate || today()));
+          }
+          if (v.recordExpense && num(newItem.qty) * num(newItem.pricePerKg) > 0) {
+            actions.add('expenses', {
+              date: String(v.entryDate || today()),
+              category: INVENTORY_CAT_TO_EXPENSE[newItem.cat] || 'other',
+              sub: newItem.name,
+              title: `خرید اولیه ${n(num(newItem.qty))} ${newItem.unit} ${newItem.name}`,
+              amount: num(newItem.qty) * num(newItem.pricePerKg),
+              qty: num(newItem.qty),
+              unit: newItem.unit,
+              vendor: '',
+              paidBy: 'fund',
+              split: 'share',
+              flockId: '',
+              note: 'ثبت خودکار همزمان با تعریف اولیه کالا در انبار',
+            });
+          }
+        }
         toast('کالا ذخیره شد');
       }}
     />
@@ -1223,6 +1266,7 @@ export function InventoryMoveForm({
 }) {
   const s = useApp();
   const { toast } = useUI();
+  const defaultItem = s.inventory.find((i) => i.id === (itemId || s.inventory[0]?.id));
 
   const fields: FieldDef[] = [
     {
@@ -1231,7 +1275,7 @@ export function InventoryMoveForm({
       type: 'select',
       required: true,
       col: 'half',
-      options: s.inventory.map((i) => ({ value: i.id, label: i.name })),
+      options: s.inventory.map((i) => ({ value: i.id, label: `${i.name} (موجودی: ${n(i.qty)} ${i.unit})` })),
     },
     {
       name: 'kind',
@@ -1246,11 +1290,24 @@ export function InventoryMoveForm({
     { name: 'date', label: 'تاریخ', type: 'date', required: true, col: 'half' },
     { name: 'qty', label: 'مقدار', type: 'number', required: true, col: 'half' },
     {
-      name: 'cost',
-      label: 'مبلغ کل (اختیاری)',
+      name: 'unitPrice',
+      label: 'قیمت واحد (تومان)',
       type: 'money',
       col: 'half',
-      hint: 'در صورت ورود، به عنوان هزینه ثبت می‌شود',
+      hint: 'فی هر واحد کالا',
+    },
+    {
+      name: 'cost',
+      label: 'مبلغ کل (تومان)',
+      type: 'money',
+      col: 'half',
+      hint: 'حاصل‌ضرب مقدار در قیمت واحد',
+    },
+    {
+      name: 'recordExpense',
+      label: 'آیا به عنوان هزینه در حسابداری ثبت شود؟',
+      type: 'checkbox',
+      col: 'full',
     },
     {
       name: 'reason',
@@ -1282,12 +1339,37 @@ export function InventoryMoveForm({
         kind: 'in',
         date: today(),
         qty: 0,
+        unitPrice: defaultItem ? num(defaultItem.pricePerKg) : 0,
         cost: 0,
+        recordExpense: true,
         reason: STOCK_REASONS[0],
         flockId: '',
         note: '',
       }}
       onClose={onClose}
+      extra={(v, setValue) => {
+        const item = s.inventory.find((i) => i.id === v.itemId);
+        const q = num(v.qty);
+        const p = num(v.unitPrice);
+        const calculated = q * p;
+        return (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 10px', padding: '6px 10px', background: '#F8FAFC', borderRadius: 8, fontSize: 12 }}>
+            <span>
+              {item ? `موجودی فعلی «${item.name}»: ${n(item.qty)} ${item.unit}` : ''}
+            </span>
+            {q > 0 && p > 0 ? (
+              <button
+                type="button"
+                className="btn sm ghost"
+                style={{ fontSize: 11, padding: '2px 8px', color: '#6D28D9' }}
+                onClick={() => setValue('cost', calculated)}
+              >
+                محاسبه خودکار مبلغ: {money(calculated)} تومان
+              </button>
+            ) : null}
+          </div>
+        );
+      }}
       onSubmit={(v) => {
         const item = s.inventory.find((i) => i.id === v.itemId);
         if (!item) return false;
@@ -1296,6 +1378,7 @@ export function InventoryMoveForm({
           toast(`موجودی کافی نیست (موجودی: ${n(item.qty)})`, 'error');
           return false;
         }
+        const effectiveCost = num(v.cost) > 0 ? num(v.cost) : num(v.qty) * num(v.unitPrice);
         actions.adjustStock(
           { [String(item.name).trim()]: v.kind === 'in' ? q : -q },
           {
@@ -1305,20 +1388,20 @@ export function InventoryMoveForm({
             note: String(v.note ?? ''),
           },
         );
-        if (v.kind === 'in' && num(v.cost) > 0) {
+        if (v.kind === 'in' && v.recordExpense !== false && effectiveCost > 0) {
           actions.add('expenses', {
             date: String(v.date),
             category: INVENTORY_CAT_TO_EXPENSE[item.cat] || 'other',
             sub: item.name,
             title: `خرید ${n(q)} ${item.unit} ${item.name}`,
-            amount: num(v.cost),
+            amount: effectiveCost,
             qty: q,
             unit: item.unit,
             vendor: '',
             paidBy: 'fund',
             split: 'share',
             flockId: String(v.flockId || ''),
-            note: 'ثبت خودکار از انبار',
+            note: 'ثبت خودکار از ورود انبار',
           });
         }
         toast('تراکنش انبار ثبت شد');
@@ -1521,17 +1604,22 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
 
   const [name, setName] = useState(editing?.name ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
+  const [mode, setMode] = useState<'percent' | 'ratio'>('percent');
   const [items, setItems] = useState<ItemRow[]>(() => {
     const src = editing?.items;
     if (src && src.length) return src.map((i) => ({ ...i }));
     return [{ name: 'ذرت', percent: 0, pricePerKg: 0, protein: 0 }];
   });
 
+  const totalUnits = items.reduce((acc, it) => acc + num(it.percent), 0);
   const totals = items.reduce(
     (acc, it) => {
-      acc.pct += num(it.percent);
-      acc.cost += (num(it.percent) / 100) * num(it.pricePerKg);
-      acc.protein += (num(it.percent) / 100) * num(it.protein);
+      const p = mode === 'ratio'
+        ? (totalUnits > 0 ? (num(it.percent) / totalUnits) * 100 : 0)
+        : num(it.percent);
+      acc.pct += p;
+      acc.cost += (p / 100) * num(it.pricePerKg);
+      acc.protein += (p / 100) * num(it.protein);
       return acc;
     },
     { pct: 0, cost: 0, protein: 0 },
@@ -1542,7 +1630,14 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
       toast('نام فرمول را وارد کنید', 'error');
       return;
     }
-    const clean = items.filter((i) => i.name.trim());
+    const clean = items
+      .filter((i) => i.name.trim())
+      .map((it) => ({
+        ...it,
+        percent: mode === 'ratio'
+          ? (totalUnits > 0 ? Math.round(((num(it.percent) / totalUnits) * 100) * 100) / 100 : 0)
+          : num(it.percent),
+      }));
     if (!clean.length) {
       toast('حداقل یک ماده اولیه لازم است', 'error');
       return;
@@ -1590,78 +1685,103 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
         </div>
       </div>
 
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0 6px', flexWrap: 'wrap', gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>نحوه ورود مقادیر مواد اولیه:</span>
+        <Chips
+          items={[
+            { value: 'percent', label: 'درصدی (٪)' },
+            { value: 'ratio', label: 'نسبتی / سهمی' },
+          ]}
+          active={mode}
+          onPick={(v) => setMode(v as 'percent' | 'ratio')}
+        />
+      </div>
+
       <div
         className="formula-head"
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 70px 90px 90px 34px',
+          gridTemplateColumns: '1fr 90px 90px 90px 34px',
           gap: 6,
           margin: '12px 0 6px',
         }}
       >
         <span>ماده اولیه</span>
-        <span>درصد</span>
+        <span>{mode === 'ratio' ? 'سهم / وزن (کیلو)' : 'درصد'}</span>
         <span>قیمت هر کیلو</span>
         <span>پروتئین٪</span>
         <span />
       </div>
 
-      {items.map((it, i) => (
-        <div
-          key={i}
-          className="formula-item formula-row"
-          style={{ marginBottom: 6 }}
-        >
-          <input
-            className="input"
-            value={it.name}
-            placeholder="نام ماده"
-            onChange={(e) =>
-              setItems((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
-            }
-          />
-          <input
-            className="input num"
-            type="number"
-            step={0.1}
-            value={it.percent || ''}
-            onChange={(e) =>
-              setItems((prev) =>
-                prev.map((x, j) => (j === i ? { ...x, percent: num(e.target.value) } : x)),
-              )
-            }
-          />
-          <input
-            className="input num"
-            type="number"
-            step={100}
-            value={it.pricePerKg || ''}
-            onChange={(e) =>
-              setItems((prev) =>
-                prev.map((x, j) => (j === i ? { ...x, pricePerKg: num(e.target.value) } : x)),
-              )
-            }
-          />
-          <input
-            className="input num"
-            type="number"
-            step={0.1}
-            value={it.protein || ''}
-            onChange={(e) =>
-              setItems((prev) =>
-                prev.map((x, j) => (j === i ? { ...x, protein: num(e.target.value) } : x)),
-              )
-            }
-          />
-          <button
-            className="icon-btn sm"
-            type="button"
-            onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
+      {items.map((it, i) => {
+        const effectivePct = mode === 'ratio' && totalUnits > 0
+          ? (num(it.percent) / totalUnits) * 100
+          : num(it.percent);
+        return (
+          <div
+            key={i}
+            className="formula-item formula-row"
+            style={{ marginBottom: 6 }}
           >
-            <Icon name="trash" size={14} />
-          </button>
-        </div>
-      ))}
+            <input
+              className="input"
+              value={it.name}
+              placeholder="نام ماده"
+              onChange={(e) =>
+                setItems((prev) => prev.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+              }
+            />
+            <div>
+              <input
+                className="input num"
+                type="number"
+                step={0.1}
+                value={it.percent || ''}
+                placeholder="۰"
+                onChange={(e) =>
+                  setItems((prev) =>
+                    prev.map((x, j) => (j === i ? { ...x, percent: num(e.target.value) } : x)),
+                  )
+                }
+              />
+              {mode === 'ratio' && totalUnits > 0 ? (
+                <div style={{ fontSize: 10, color: 'var(--brand)', textAlign: 'center', marginTop: 1 }}>
+                  ({n(effectivePct, 1)}٪)
+                </div>
+              ) : null}
+            </div>
+            <input
+              className="input num"
+              type="number"
+              step={100}
+              value={it.pricePerKg || ''}
+              onChange={(e) =>
+                setItems((prev) =>
+                  prev.map((x, j) => (j === i ? { ...x, pricePerKg: num(e.target.value) } : x)),
+                )
+              }
+            />
+            <input
+              className="input num"
+              type="number"
+              step={0.1}
+              value={it.protein || ''}
+              onChange={(e) =>
+                setItems((prev) =>
+                  prev.map((x, j) => (j === i ? { ...x, protein: num(e.target.value) } : x)),
+                )
+              }
+            />
+            <button
+              className="icon-btn sm"
+              type="button"
+              onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          </div>
+        );
+      })}
 
       <button
         className="btn sm mt-sm"
@@ -1672,12 +1792,21 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
       </button>
 
       <div className="card mt" style={{ boxShadow: 'none', background: '#FAF8FE', border: '1px solid var(--line)' }}>
-        <div className="kv">
-          <span>جمع درصدها</span>
-          <b style={{ color: Math.abs(totals.pct - 100) > 0.5 ? '#DC2626' : '#059669' }}>
-            {n(totals.pct, 1)}٪
-          </b>
-        </div>
+        {mode === 'ratio' ? (
+          <div className="kv">
+            <span>جمع وزن‌ها / سهم‌ها</span>
+            <b style={{ color: totalUnits > 0 ? '#059669' : '#DC2626' }}>
+              {n(totalUnits, 2)} کیلوگرم (یا سهم) — معادل ۱۰۰٪
+            </b>
+          </div>
+        ) : (
+          <div className="kv">
+            <span>جمع درصدها</span>
+            <b style={{ color: Math.abs(totals.pct - 100) > 0.5 ? '#DC2626' : '#059669' }}>
+              {n(totals.pct, 1)}٪
+            </b>
+          </div>
+        )}
         <div className="kv">
           <span>هزینه هر کیلو خوراک</span>
           <b>{money(totals.cost)}</b>

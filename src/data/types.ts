@@ -26,7 +26,7 @@ export interface Settings {
 }
 
 /* ------------------------------- اشخاص (CRM) ------------------------------ */
-export type PersonType = 'customer' | 'supplier' | 'both';
+export type PersonType = 'customer' | 'supplier' | 'both' | 'service';
 
 export interface Person extends Base {
   code: string;

@@ -1,5 +1,5 @@
 /** فرم‌های اشخاص (CRM)، معاملات و دریافت/پرداخت */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FormModal, Field, type FieldDef, type FormValues } from '../components/Form';
 import { Modal, useUI } from '../components/Modal';
 import { Chips } from '../components/ui';
@@ -27,7 +27,7 @@ import {
   UNITS,
   WAREHOUSES,
 } from '../data/categories';
-import { today } from '../lib/jalali';
+import { toEn, today } from '../lib/jalali';
 import { splitAmount } from '../lib/money';
 import { money, n } from '../lib/format';
 import type {
@@ -164,6 +164,59 @@ export function AccountForm({ id, onClose }: { id?: string; onClose: () => void 
         if (editing) actions.update('accounts', editing.id, data as unknown as Partial<Account>);
         else actions.add('accounts', data as unknown as Account);
         toast('حساب ذخیره شد');
+      }}
+    />
+  );
+}
+
+export function DecimalInput({
+  value,
+  onChange,
+  className = 'input num',
+  placeholder = '۰',
+  min,
+  max,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  className?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+}) {
+  const [text, setText] = useState<string>(value ? String(value) : '');
+
+  useEffect(() => {
+    const cur = num(text);
+    if (value !== cur && !(value === 0 && (text === '' || text === '0' || text === '۰'))) {
+      setText(value ? String(value) : '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <input
+      className={className}
+      inputMode="decimal"
+      placeholder={placeholder}
+      value={text}
+      onChange={(e) => {
+        let val = toEn(e.target.value).replace(/[/٫]/g, '.');
+        val = val.replace(/[^0-9.-]/g, '');
+        const parts = val.split('.');
+        if (parts.length > 2) {
+          val = parts[0] + '.' + parts.slice(1).join('');
+        }
+        setText(val);
+        const parsed = num(val);
+        if (min !== undefined && parsed < min) return;
+        if (max !== undefined && parsed > max) return;
+        onChange(parsed);
+      }}
+      onBlur={() => {
+        const parsed = num(text);
+        setText(parsed ? String(parsed) : '');
+        onChange(parsed);
       }}
     />
   );
@@ -337,12 +390,10 @@ export function TransactionForm({
     onChange: (v: number) => void,
     placeholder = '۰',
   ) => (
-    <input
-      className="input num"
-      inputMode="numeric"
-      value={value ? String(value) : ''}
+    <DecimalInput
+      value={value}
+      onChange={onChange}
       placeholder={placeholder}
-      onChange={(e) => onChange(num(e.target.value))}
     />
   );
 
@@ -603,19 +654,15 @@ export function TransactionForm({
                   </select>
                 </td>
                 <td>
-                  <input
-                    className="input num"
-                    inputMode="numeric"
-                    value={r.qty ? String(r.qty) : ''}
-                    onChange={(e) => setRow(r.key, { qty: num(e.target.value) })}
+                  <DecimalInput
+                    value={r.qty}
+                    onChange={(val) => setRow(r.key, { qty: val })}
                   />
                 </td>
                 <td>
-                  <input
-                    className="input num"
-                    inputMode="numeric"
-                    value={r.price ? String(r.price) : ''}
-                    onChange={(e) => setRow(r.key, { price: num(e.target.value) })}
+                  <DecimalInput
+                    value={r.price}
+                    onChange={(val) => setRow(r.key, { price: val })}
                   />
                 </td>
                 <td className="num-cell">{n(num(r.qty) * num(r.price))}</td>
@@ -743,14 +790,11 @@ export function TransactionForm({
                   <Icon name="close" size={12} />
                 </button>
               </label>
-              <input
-                className="input num"
-                type="number"
+              <DecimalInput
                 min={0}
                 max={shareMode === 'unit' ? undefined : 100}
-                step={shareMode === 'unit' ? 1 : 0.1}
                 value={shares[p.id] ?? 0}
-                onChange={(e) => setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))}
+                onChange={(val) => setShares((prev) => ({ ...prev, [p.id]: val }))}
               />
               <div className="hint">
                 {shareMode === 'unit' && shareSum > 0 ? (

@@ -8,7 +8,7 @@ import { PERSON_TYPES, PERSON_TYPE_LABEL } from '../data/categories';
 import { n } from '../lib/format';
 import { PersonForm } from '../forms/crm';
 
-type Filter = 'all' | 'customer' | 'supplier' | 'both';
+type Filter = 'all' | 'customer' | 'supplier' | 'both' | 'service';
 
 export function Persons() {
   const s = useApp();
@@ -32,6 +32,7 @@ export function Persons() {
   const counts = {
     customers: all.filter((p) => p.type === 'customer' || p.type === 'both').length,
     suppliers: all.filter((p) => p.type === 'supplier' || p.type === 'both').length,
+    services: all.filter((p) => p.type === 'service').length,
   };
 
   const remove = async (id: string, name: string) => {
@@ -49,7 +50,7 @@ export function Persons() {
     <>
       <PageHead
         title="اشخاص"
-        sub="مشتریان و تامین‌کنندگان — دفترچه طرف حساب‌ها"
+        sub="مشتریان، تامین‌کنندگان و خدمات‌دهندگان — دفترچه طرف حساب‌ها"
         actions={
           <button className="btn primary" onClick={() => ui.open(<PersonForm onClose={ui.close} />)}>
             <Icon name="plus" size={16} /> شخص جدید
@@ -61,6 +62,7 @@ export function Persons() {
         <Stat icon="👥" label="کل اشخاص" value={n(all.length)} sub="در دفترچه" />
         <Stat icon="🛒" label="مشتریان" value={n(counts.customers)} />
         <Stat icon="🚚" label="تامین‌کنندگان" value={n(counts.suppliers)} />
+        <Stat icon="🛠️" label="خدمات‌دهندگان" value={n(counts.services)} />
         <Stat
           icon="🤝"
           label="هر دو"
