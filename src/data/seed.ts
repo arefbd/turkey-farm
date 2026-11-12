@@ -9,6 +9,7 @@ import type {
   Expense,
   Flock,
   Formula,
+  Hall,
   InventoryItem,
   Partner,
   Product,
@@ -16,17 +17,20 @@ import type {
   Settings,
   Task,
   Vaccine,
+  Warehouse,
 } from './types';
 
 export const STORAGE_KEY = 'turkeyFarm.v3';
 
 export const DEFAULT_PRODUCT_CATEGORIES = [
   'جوجه',
-  'گوشت',
+  'گوشت و لاشه',
   'دان و خوراک',
+  'مکمل و کنسانتره',
   'دارو و واکسن',
   'لوازم و تجهیزات',
   'بسته‌بندی',
+  'خدمات',
 ];
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -86,6 +90,50 @@ export const DEFAULT_PRODUCTS: Array<Omit<Product, 'id' | 'createdAt'>> = [
   { code: 'PRD-403', category: 'دارو و واکسن', name: 'مولتی ویتامین الکترولیت', unit: 'کیلوگرم', defaultPrice: 0, active: true },
 ];
 
+export const DEFAULT_WAREHOUSES: Array<Omit<Warehouse, 'id' | 'createdAt'>> = [
+  { code: 'WH-01', name: 'انبار مواد اولیه خوراک', type: 'raw_feed', manager: 'مدیریت مزرعه', active: true, notes: 'ذرت، سویا، کنجاله‌ها و روغن' },
+  { code: 'WH-02', name: 'انبار دان پلت کارخانه', type: 'factory_pellet', manager: 'مدیریت مزرعه', active: true, notes: 'دان آماده پلت کارخانه‌ای' },
+  { code: 'WH-03', name: 'انبار دان آماده مزرعه', type: 'farm_feed', manager: 'مسئول آسیاب‌میکسر', active: true, notes: 'خوراک ترکیبی تولیدی فارم' },
+  { code: 'WH-04', name: 'انبار دارو، واکسن و مکمل', type: 'medicine_vaccine', manager: 'دامپزشک فارم', temperature: 4, active: true, notes: 'نگهداری با رعایت زنجیره سرد' },
+  { code: 'WH-05', name: 'سردخانه گوشت و لاشه', type: 'cold_storage', manager: 'مسئول سردخانه', temperature: -18, active: true, notes: 'نگهداری گوشت منجمد و کشتار' },
+  { code: 'WH-06', name: 'انبار ملزومات و تجهیزات', type: 'equipment', manager: 'انباردار', active: true, notes: 'لوازم یدکی، پوشال و کارتن' },
+];
+
+export const DEFAULT_HALLS: Array<Omit<Hall, 'id' | 'createdAt'>> = [
+  {
+    code: 'H-01',
+    name: 'سالن شماره ۱ (پرورشی اصلی)',
+    farmName: 'فارم مرکزی',
+    lengthM: 80,
+    widthM: 14,
+    areaM2: 1120,
+    capacity: 5500,
+    ventilationType: 'تونلی مکشی با اینلت هوشمند',
+    heatingType: 'جت‌هیتر دوگانه‌سوز دودکش‌دار',
+    coolingType: 'پد سلولزی ۱۵ سانتی‌متری',
+    status: 'active',
+    lastDisinfectionDate: '1405/01/10',
+    readyDate: '1405/01/15',
+    notes: 'مجهز به روشنایی دیمردار و خطوط آبخوری نیپل و دانخوری اتوماتیک بشقابی',
+  },
+  {
+    code: 'H-02',
+    name: 'سالن شماره ۲ (پرورشی)',
+    farmName: 'فارم مرکزی',
+    lengthM: 80,
+    widthM: 14,
+    areaM2: 1120,
+    capacity: 5500,
+    ventilationType: 'تونلی',
+    heatingType: 'جت‌هیتر دوگانه‌سوز',
+    coolingType: 'پد سلولزی',
+    status: 'empty',
+    lastDisinfectionDate: '1405/01/20',
+    readyDate: '1405/02/01',
+    notes: 'آماده پذیرش جوجه‌ریزی دوره جدید',
+  },
+];
+
 export function blank(): AppState {
   return {
     version: 2,
@@ -109,6 +157,9 @@ export function blank(): AppState {
     accounts: [],
     stockMoves: [],
     products: [],
+    halls: [],
+    warehouses: [],
+    partnershipUnits: [],
   };
 }
 

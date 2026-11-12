@@ -924,7 +924,20 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
         </div>
         <div className="field third">
           <label className="lbl">سالن</label>
-          <input className="input" value={hall} onChange={(e) => setHall(e.target.value)} />
+          <input
+            className="input"
+            list="flock-halls-list"
+            value={hall}
+            onChange={(e) => setHall(e.target.value)}
+            placeholder="انتخاب یا تایپ سالن"
+          />
+          <datalist id="flock-halls-list">
+            {s.halls.map((h) => (
+              <option key={h.id} value={h.name}>
+                {h.code} — ظرفیت {n(h.capacity)}
+              </option>
+            ))}
+          </datalist>
         </div>
 
         <Field
@@ -1962,3 +1975,5 @@ export function ProductForm({ id, onClose }: { id?: string; onClose: () => void 
     />
   );
 }
+
+export * from './phase2';

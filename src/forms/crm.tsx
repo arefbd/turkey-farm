@@ -499,7 +499,20 @@ export function TransactionForm({
 
         <div className="field third">
           <label className="lbl">سالن</label>
-          <input className="input" value={hall} onChange={(e) => setHall(e.target.value)} />
+          <input
+            className="input"
+            list="tx-halls-list"
+            value={hall}
+            onChange={(e) => setHall(e.target.value)}
+            placeholder="انتخاب یا تایپ سالن"
+          />
+          <datalist id="tx-halls-list">
+            {s.halls.map((h) => (
+              <option key={h.id} value={h.name}>
+                {h.code} — ظرفیت {n(h.capacity)}
+              </option>
+            ))}
+          </datalist>
         </div>
         <div className="field third">
           <label className="lbl">دوره پرورش (گله)</label>
@@ -571,17 +584,23 @@ export function TransactionForm({
           })() : null}
         </div>
         <div className="field third">
-          <label className="lbl">محل ورود به انبار</label>
+          <label className="lbl">انبار مرتبط</label>
           <select
             className="input"
             value={warehouse}
             onChange={(e) => setWarehouse(e.target.value)}
           >
-            {WAREHOUSES.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
+            {s.warehouses && s.warehouses.length > 0
+              ? s.warehouses.map((w) => (
+                  <option key={w.id} value={w.name}>
+                    {w.name} ({w.code})
+                  </option>
+                ))
+              : WAREHOUSES.map((w) => (
+                  <option key={w} value={w}>
+                    {w}
+                  </option>
+                ))}
           </select>
         </div>
       </div>

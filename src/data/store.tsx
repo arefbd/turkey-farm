@@ -126,6 +126,52 @@ function normalize(s: AppState): AppState {
     defaultPrice: num(p.defaultPrice),
     active: p.active !== false,
   }));
+  next.halls = (next.halls || []).map((h) => ({
+    ...h,
+    code: h.code || '',
+    name: String(h.name || '').trim(),
+    farmName: String(h.farmName || '').trim(),
+    lengthM: num(h.lengthM),
+    widthM: num(h.widthM),
+    areaM2: num(h.areaM2) || num(h.lengthM) * num(h.widthM),
+    capacity: num(h.capacity),
+    ventilationType: h.ventilationType || '',
+    heatingType: h.heatingType || '',
+    coolingType: h.coolingType || '',
+    status: h.status || 'empty',
+    lastDisinfectionDate: J.norm(h.lastDisinfectionDate) || h.lastDisinfectionDate || '',
+    readyDate: J.norm(h.readyDate) || h.readyDate || '',
+    notes: h.notes || '',
+  }));
+  next.warehouses = (next.warehouses || []).map((w) => ({
+    ...w,
+    code: w.code || '',
+    name: String(w.name || '').trim(),
+    type: w.type || 'raw_feed',
+    hallId: w.hallId || '',
+    manager: String(w.manager || '').trim(),
+    temperature: w.temperature != null ? num(w.temperature) : undefined,
+    active: w.active !== false,
+    notes: w.notes || '',
+  }));
+  next.partnershipUnits = (next.partnershipUnits || []).map((u) => ({
+    ...u,
+    code: u.code || '',
+    title: String(u.title || '').trim(),
+    scope: u.scope || 'flock',
+    targetId: u.targetId || '',
+    startDate: J.norm(u.startDate) || u.startDate || '',
+    endDate: u.endDate ? J.norm(u.endDate) || u.endDate : '',
+    shareMode: u.shareMode === 'percent' ? 'percent' : 'unit',
+    status: u.status || 'active',
+    shares: (u.shares || []).map((x) => ({
+      partnerId: x.partnerId,
+      percent: num(x.percent),
+      units: num(x.units),
+      initialCapital: num(x.initialCapital),
+    })),
+    notes: u.notes || '',
+  }));
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
 }

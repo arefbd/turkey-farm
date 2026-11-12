@@ -315,6 +315,72 @@ export interface Product extends Base {
   active?: boolean;
 }
 
+/* -------------------------------- سالن‌ها -------------------------------- */
+export type HallStatus = 'active' | 'empty' | 'disinfecting' | 'maintenance';
+
+export interface Hall extends Base {
+  code: string;
+  name: string;
+  farmName: string;
+  lengthM: number;
+  widthM: number;
+  areaM2: number;
+  capacity: number;
+  ventilationType: string;
+  heatingType: string;
+  coolingType: string;
+  status: HallStatus;
+  lastDisinfectionDate: string;
+  readyDate: string;
+  notes: string;
+}
+
+/* ------------------------------- انبارها ------------------------------- */
+export type WarehouseType =
+  | 'raw_feed'
+  | 'factory_pellet'
+  | 'farm_feed'
+  | 'hall_sub'
+  | 'medicine_vaccine'
+  | 'equipment'
+  | 'cold_storage'
+  | 'waste';
+
+export interface Warehouse extends Base {
+  code: string;
+  name: string;
+  type: WarehouseType;
+  hallId?: string;
+  manager: string;
+  temperature?: number;
+  active: boolean;
+  notes: string;
+}
+
+/* ----------------------- واحدهای مشارکت و قراردادها ----------------------- */
+export type PartnershipScope = 'flock' | 'hall' | 'trading' | 'general';
+export type PartnershipUnitStatus = 'active' | 'settled' | 'closed';
+
+export interface PartnershipUnitShare {
+  partnerId: string;
+  percent: number;
+  units: number;
+  initialCapital: number;
+}
+
+export interface PartnershipUnit extends Base {
+  code: string;
+  title: string;
+  scope: PartnershipScope;
+  targetId?: string;
+  startDate: string;
+  endDate?: string;
+  shareMode: 'percent' | 'unit';
+  shares: PartnershipUnitShare[];
+  status: PartnershipUnitStatus;
+  notes: string;
+}
+
 export interface AppState {
   version: number;
   settings: Settings;
@@ -337,6 +403,9 @@ export interface AppState {
   accounts: Account[];
   stockMoves: StockMove[];
   products: Product[];
+  halls: Hall[];
+  warehouses: Warehouse[];
+  partnershipUnits: PartnershipUnit[];
 }
 
 export type CollectionKey =
@@ -358,7 +427,10 @@ export type CollectionKey =
   | 'transfers'
   | 'accounts'
   | 'stockMoves'
-  | 'products';
+  | 'products'
+  | 'halls'
+  | 'warehouses'
+  | 'partnershipUnits';
 
 export interface FlockStats {
   flock: Flock;
