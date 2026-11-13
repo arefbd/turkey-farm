@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
+import { DecimalInput } from '../components/ui';
 import { actions, num, useApp } from '../data/store';
 import { today } from '../lib/jalali';
 import { money, n } from '../lib/format';
@@ -629,17 +630,16 @@ export function PartnershipUnitForm({ id, onClose }: { id?: string; onClose: () 
                       </select>
                     </td>
                     <td>
-                      <input
-                        className="input"
-                        type="number"
+                      <DecimalInput
                         style={{ padding: '4px 8px', width: 90, textAlign: 'center' }}
                         value={shareMode === 'percent' ? row.percent : row.units}
-                        onChange={(e) =>
+                        placeholder={shareMode === 'percent' ? 'درصد' : 'سهم'}
+                        onChange={(val) =>
                           updateShare(
                             idx,
                             shareMode === 'percent'
-                              ? { percent: num(e.target.value) }
-                              : { units: num(e.target.value) },
+                              ? { percent: val }
+                              : { units: val },
                           )
                         }
                       />
@@ -648,12 +648,10 @@ export function PartnershipUnitForm({ id, onClose }: { id?: string; onClose: () 
                       <td style={{ color: 'var(--text-muted)' }}>{n(equivPct)}٪</td>
                     )}
                     <td>
-                      <input
-                        className="input"
-                        type="number"
-                        style={{ padding: '4px 8px', width: 140 }}
+                      <DecimalInput
+                        style={{ padding: '4px 8px', width: 140, textAlign: 'right' }}
                         value={row.initialCapital || ''}
-                        onChange={(e) => updateShare(idx, { initialCapital: num(e.target.value) })}
+                        onChange={(val) => updateShare(idx, { initialCapital: val })}
                         placeholder="۰ تومان"
                       />
                     </td>

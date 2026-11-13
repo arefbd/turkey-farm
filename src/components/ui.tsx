@@ -1,7 +1,9 @@
 /** اجزای مشترک رابط کاربری — هم‌نام با کلاس‌های CSS اصلی */
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { n, pct } from '../lib/format';
+import { num } from '../data/store';
+import { toEn } from '../lib/jalali';
 
 export function Stat({
   icon,
@@ -258,4 +260,94 @@ export function Row({
 
 export function Num({ v, dec = 0 }: { v: number; dec?: number }) {
   return <>{n(v, dec)}</>;
+}
+
+/** ورودی عددی هوشمند با پشتیبانی کامل از ارقام فارسی/انگلیسی، اعداد رند و اعشاری بدون پریدن ممیز */
+export function DecimalInput({
+  id,
+  value,
+  onChange,
+  className = 'input num',
+  placeholder = '۰',
+  min,
+  max,
+  style,
+  disabled,
+}: {
+  id?: string;
+  value: number | string | undefined | null;
+  onChange: (v: number) => void;
+  className?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  style?: React.CSSProperties;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState<string>(() => {
+    if (value === '' || value == null) return '';
+    const n = num(value);
+    return Number.isFinite(n) ? String(n) : '';
+  });
+
+  useEffect(() => {
+    const curVal = text === '' || text === '.' || text === '-' ? 0 : num(text);
+    const propVal = value === '' || value == null ? 0 : num(value);
+    if (propVal !== curVal && !text.endsWith('.') && !text.endsWith('/') && !text.endsWith('٫')) {
+      setText(value === '' || value == null ? '' : String(propVal));
+    }
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = toEn(e.target.value);
+    raw = raw.replace(/[/٫،,]/g, '.');
+    raw = raw.replace(/[^0-9.-]/g, '');
+    const parts = raw.split('.');
+    if (parts.length > 2) {
+      raw = parts[0] + '.' + parts.slice(1).join('');
+    }
+
+    setText(raw);
+
+    if (raw === '' || raw === '.' || raw === '-') {
+      onChange(0);
+      return;
+    }
+
+    const parsed = parseFloat(raw);
+    if (Number.isFinite(parsed)) {
+      if (min !== undefined && parsed < min) return;
+      if (max !== undefined && parsed > max) return;
+      onChange(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    if (text === '' || text === '.' || text === '-') {
+      setText('');
+      onChange(0);
+    } else {
+      const parsed = parseFloat(text);
+      if (Number.isFinite(parsed)) {
+        setText(String(parsed));
+        onChange(parsed);
+      }
+    }
+  };
+
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      dir="ltr"
+      className={className}
+      style={{ textAlign: 'center', ...style }}
+      placeholder={placeholder}
+      value={text}
+      disabled={disabled}
+      onChange={handleChange}
+      onBlur={handleBlur}
+    />
+  );
 }

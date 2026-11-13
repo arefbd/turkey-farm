@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { FormModal, Field, type FieldDef, type FormValues } from '../components/Form';
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
-import { Chips } from '../components/ui';
+import { Chips, DecimalInput } from '../components/ui';
 import { actions, flockStats, nextCode, num, useApp } from '../data/store';
 import {
   CHICK_AGE_DEFAULT,
@@ -221,15 +221,13 @@ export function ExpenseForm({
                       <label className="lbl">
                         {p.name} {shareMode === 'unit' ? '(تعداد سهم)' : '(درصد)'}
                       </label>
-                      <input
-                        className="input num"
-                        type="number"
+                      <DecimalInput
                         min={0}
                         max={shareMode === 'unit' ? undefined : 100}
-                        step={shareMode === 'unit' ? 1 : 0.1}
-                        value={shares[p.id] ?? 0}
-                        onChange={(e) =>
-                          setShares((prev) => ({ ...prev, [p.id]: num(e.target.value) }))
+                        value={shares[p.id]}
+                        placeholder={shareMode === 'unit' ? 'سهم' : 'درصد'}
+                        onChange={(val) =>
+                          setShares((prev) => ({ ...prev, [p.id]: val }))
                         }
                       />
                       <div className="hint" style={{ fontSize: 11 }}>
@@ -618,6 +616,7 @@ export function PartnerForm({ id, onClose }: { id?: string; onClose: () => void 
   const fields: FieldDef[] = [
     { name: 'name', label: 'نام و نام خانوادگی', type: 'text', required: true, col: 'half' },
     { name: 'phone', label: 'موبایل', type: 'text', col: 'half' },
+    { name: 'share', label: 'درصد سهم پیش‌فرض (٪)', type: 'number', col: 'third', placeholder: 'مثلاً ۵۰ یا ۳۳.۳۳' },
     { name: 'role', label: 'نقش', type: 'text', col: 'third', placeholder: 'مدیر مالی، فنی ...' },
     { name: 'color', label: 'رنگ', type: 'select', col: 'third', options: PARTNER_COLORS },
     { name: 'joined', label: 'تاریخ عضویت', type: 'date', col: 'half' },
@@ -630,13 +629,18 @@ export function PartnerForm({ id, onClose }: { id?: string; onClose: () => void 
       initial={initial}
       onClose={onClose}
       onSubmit={(v) => {
-        const others = s.partners.filter((p) => !editing || p.id !== editing.id);
-        const tot = others.reduce((a, p) => a + num(p.share), 0) + num(v.share);
-        if (tot > 100.5) {
-          toast(`جمع سهم‌ها ${tot}٪ می‌شود؛ حداکثر ۱۰۰ مجاز است`, 'error');
+        const shareVal = num(v.share);
+        if (shareVal < 0) {
+          toast('درصد سهم نمی‌تواند منفی باشد', 'error');
           return false;
         }
-        const data: FormValues = { ...v, share: num(v.share) };
+        const others = s.partners.filter((p) => !editing || p.id !== editing.id);
+        const tot = others.reduce((a, p) => a + num(p.share), 0) + shareVal;
+        if (tot > 100.01) {
+          toast(`جمع سهم‌ها ${tot.toFixed(2)}٪ می‌شود؛ حداکثر ۱۰۰٪ مجاز است`, 'error');
+          return false;
+        }
+        const data: FormValues = { ...v, share: shareVal };
         if (editing) actions.update('partners', editing.id, asPatch<Partner>(data));
         else actions.add('partners', asNew<Partner>(data));
         toast('شریک ذخیره شد');
@@ -963,14 +967,12 @@ export function FlockForm({ id, onClose }: { id?: string; onClose: () => void })
               <label className="lbl">
                 {p?.name || 'شریک'} {shareMode === 'unit' ? '— سهم' : '— درصد'}
               </label>
-              <input
-                className="input num"
-                inputMode="numeric"
-                value={r.value ? String(r.value) : ''}
-                placeholder="۰"
-                onChange={(e) =>
+              <DecimalInput
+                value={r.value}
+                placeholder={shareMode === 'unit' ? 'سهم' : 'درصد'}
+                onChange={(val) =>
                   setRows((prev) =>
-                    prev.map((x, k) => (k === i ? { ...x, value: num(e.target.value) } : x)),
+                    prev.map((x, k) => (k === i ? { ...x, value: val } : x)),
                   )
                 }
               />

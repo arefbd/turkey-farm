@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
-import { Chips } from '../components/ui';
+import { Chips, DecimalInput } from '../components/ui';
 import { actions, num, useApp } from '../data/store';
 import { today } from '../lib/jalali';
 import { money, n } from '../lib/format';
@@ -263,13 +263,11 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
                     </datalist>
                   </td>
                   <td>
-                    <input
-                      className="input"
-                      type="number"
-                      step={mode === 'percent' ? '0.1' : '1'}
+                    <DecimalInput
                       style={{ padding: '4px 8px', textAlign: 'center' }}
                       value={row.percent}
-                      onChange={(e) => updateItem(idx, { percent: num(e.target.value) })}
+                      placeholder={mode === 'percent' ? 'درصد' : 'کیلو'}
+                      onChange={(val) => updateItem(idx, { percent: val })}
                     />
                   </td>
                   {mode === 'unit' && (

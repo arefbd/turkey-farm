@@ -2,6 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, useUI } from './Modal';
 import { Icon } from './Icon';
+import { DecimalInput } from './ui';
 import { JalaliDatePicker } from './DatePicker';
 import { num } from '../data/store';
 import { faDigits, norm, toEn, toFa } from '../lib/jalali';
@@ -229,14 +230,12 @@ export function Field({
     );
   } else if (def.type === 'number') {
     input = (
-      <input
-        className={'input num' + (invalid ? ' err' : '')}
+      <DecimalInput
         id={id}
-        type="number"
-        step={def.step || 'any'}
-        placeholder={def.placeholder || ''}
-        value={value === '' || value == null ? '' : String(value)}
-        onChange={(e) => setValue(def.name, e.target.value === '' ? '' : num(e.target.value))}
+        className={'input num' + (invalid ? ' err' : '')}
+        placeholder={def.placeholder || '۰'}
+        value={value === '' || value == null ? '' : (value as number | string)}
+        onChange={(v) => setValue(def.name, v)}
       />
     );
   } else {
