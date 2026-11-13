@@ -440,6 +440,7 @@ export interface AppState {
   warehouses: Warehouse[];
   partnershipUnits: PartnershipUnit[];
   slaughterBatches: SlaughterBatch[];
+  tradeLots: TradeLot[];
 }
 
 export type CollectionKey =
@@ -465,7 +466,46 @@ export type CollectionKey =
   | 'halls'
   | 'warehouses'
   | 'partnershipUnits'
-  | 'slaughterBatches';
+  | 'slaughterBatches'
+  | 'tradeLots';
+
+/* ------------------------ پارت بازرگانی و تجارت گوشت منجمد (FEFO) ------------------------ */
+export type TradeLotStatus = 'active' | 'sold_out' | 'expired';
+
+export interface LotSaleRecord {
+  id?: string;
+  date: string;
+  qtyKg: number;
+  pricePerKg: number;
+  buyerName?: string;
+  buyerId?: string;
+  invoiceNo?: string;
+  notes?: string;
+}
+
+export interface TradeLot extends Base {
+  code: string;
+  productName: string;
+  supplierName?: string;
+  supplierId?: string;
+  entryDate: string;
+  productionDate?: string;
+  expiryDate: string;
+  warehouseId?: string;
+  temperatureC?: number;
+  initialWeightKg: number;
+  soldWeightKg: number;
+  buyPricePerKg: number;
+  transportCost: number;
+  storageCost: number;
+  packagingCost: number;
+  effectiveCostPerKg: number;
+  avgSellPricePerKg?: number;
+  sales: LotSaleRecord[];
+  status: TradeLotStatus;
+  stockUpdated?: boolean;
+  notes?: string;
+}
 
 /* ------------------------ کشتارگاه و قطعه‌بندی لاشه ------------------------ */
 export interface SlaughterCut {

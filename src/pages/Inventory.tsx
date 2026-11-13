@@ -6,11 +6,12 @@ import { Empty, PageHead, SectionHead, Stat } from '../components/ui';
 import { actions, num, stockMovesFor, useApp } from '../data/store';
 import { format, today } from '../lib/jalali';
 import { money, n, short } from '../lib/format';
-import { InventoryItemForm, InventoryMoveForm, WarehouseForm, WAREHOUSE_TYPE_LABELS } from '../forms';
+import { InventoryItemForm, InventoryMoveForm, WarehouseForm, WAREHOUSE_TYPE_LABELS, TradeLotForm, LotSaleForm } from '../forms';
 import { DEFAULT_WAREHOUSES } from '../data/seed';
-import type { StockMove, Warehouse } from '../data/types';
+import { getLotFefoStatus, lotProfitSummary } from '../data/store';
+import type { StockMove, Warehouse, TradeLot } from '../data/types';
 
-type MainTab = 'items' | 'warehouses' | 'moves';
+type MainTab = 'items' | 'warehouses' | 'lots' | 'moves';
 
 function EditMoveModal({
   move,
@@ -109,6 +110,43 @@ export function Inventory() {
   const [catFilter, setCatFilter] = useState<string>('all');
   const [q, setQ] = useState('');
 
+  // پارت‌های بازرگانی گوشت منجمد و FEFO
+  const [sellingLot, setSellingLot] = useState<TradeLot | null>(null);
+  const [lotStatusFilter, setLotStatusFilter] = useState<'all' | 'active' | 'sold_out' | 'expired'>('all');
+
+  const tradeLots = s.tradeLots || [];
+  const sortedLots = useMemo(() => {
+    return tradeLots
+      .slice()
+      .sort((a, b) => (a.expiryDate || '9999').localeCompare(b.expiryDate || '9999'));
+  }, [tradeLots]);
+
+  const filteredLots = useMemo(() => {
+    if (lotStatusFilter === 'all') return sortedLots;
+    return sortedLots.filter((l) => l.status === lotStatusFilter);
+  }, [sortedLots, lotStatusFilter]);
+
+  const totalLotTonnage = tradeLots.reduce((sum, l) => sum + num(l.initialWeightKg), 0);
+  const totalSoldTonnage = tradeLots.reduce((sum, l) => sum + num(l.soldWeightKg), 0);
+  const totalRemainingTonnage = Math.max(0, totalLotTonnage - totalSoldTonnage);
+
+  const totalTradeRevenue = tradeLots.reduce((sum, l) => {
+    return sum + (l.sales || []).reduce((sSum, sale) => sSum + num(sale.qtyKg) * num(sale.pricePerKg), 0);
+  }, 0);
+
+  const totalTradeCogs = tradeLots.reduce((sum, l) => {
+    const prof = lotProfitSummary(l);
+    return sum + prof.cogs;
+  }, 0);
+
+  const totalTradeGrossProfit = totalTradeRevenue - totalTradeCogs;
+  const overallTradeMarginPct = totalTradeRevenue > 0 ? (totalTradeGrossProfit / totalTradeRevenue) * 100 : 0;
+
+  const criticalExpiryLots = tradeLots.filter((l) => {
+    const f = getLotFefoStatus(l.expiryDate);
+    return (f.status === 'critical' || f.status === 'expired') && num(l.soldWeightKg) < num(l.initialWeightKg);
+  });
+
   const deleteMove = async (m: StockMove) => {
     const ok = await ui.confirm(
       `این سطر گردش انبار (${m.kind === 'in' ? 'ورود' : 'خروج'} ${n(m.qty)} ${m.unit} ${m.itemName}) حذف شود؟ موجودی کالا بر اساس قبل از این حرکت بازگردانده می‌شود.`,
@@ -201,6 +239,8 @@ export function Inventory() {
             ? 'انبار مزرعه و کاردکس کالاها'
             : mainTab === 'warehouses'
             ? 'مدیریت انبارهای چندگانه فیزیکی'
+            : mainTab === 'lots'
+            ? 'پارت‌های بازرگانی گوشت منجمد و ردیابی FEFO'
             : 'آخرین حرکات و دفتر گردش انبار'
         }
         sub={
@@ -208,12 +248,18 @@ export function Inventory() {
             ? 'موجودی دان، دارو، سوخت و تجهیزات — با کاردکس تفصیلی'
             : mainTab === 'warehouses'
             ? 'تفکیک انبارهای مواد اولیه، دان آماده، انبارک سالن‌ها، دارو و سردخانه'
+            : mainTab === 'lots'
+            ? 'ردیابی سری‌های ساخت گوشت منجمد، کنترل تاریخ انقضا بر اساس FEFO و سودآوری بازرگانی'
             : 'رهگیری کلیه ورودها و خروج‌ها با اصلاح آنلاین موجودی'
         }
         actions={
           mainTab === 'warehouses' ? (
             <button className="btn primary" onClick={() => ui.open(<WarehouseForm onClose={ui.close} />)}>
               <Icon name="plus" size={16} /> انبار جدید
+            </button>
+          ) : mainTab === 'lots' ? (
+            <button className="btn primary" onClick={() => ui.open(<TradeLotForm onClose={ui.close} />)}>
+              <Icon name="plus" size={16} /> پارت بازرگانی جدید
             </button>
           ) : (
             <>
@@ -244,6 +290,12 @@ export function Inventory() {
           onClick={() => setMainTab('warehouses')}
         >
           <Icon name="home" size={16} /> مدیریت انبارها ({n(warehouses.length)})
+        </button>
+        <button
+          className={`btn ${mainTab === 'lots' ? 'primary' : ''}`}
+          onClick={() => setMainTab('lots')}
+        >
+          <Icon name="truck" size={16} /> پارت‌های گوشت و FEFO ({n((s.tradeLots || []).length)})
         </button>
         <button
           className={`btn ${mainTab === 'moves' ? 'primary' : ''}`}
@@ -511,6 +563,216 @@ export function Inventory() {
             </div>
           )}
         </div>
+      )}
+
+      {mainTab === 'lots' && (
+        <div className="space-y-4">
+          <div className="stats">
+            <Stat
+              icon="❄️"
+              label="موجودی گوشت در سردخانه"
+              value={`${n(totalRemainingTonnage)} kg`}
+              sub={`از کل ${n(totalLotTonnage)} kg ورودی` }
+            />
+            <Stat
+              icon="💰"
+              label="درآمد کل فروش پارت‌ها"
+              value={short(totalTradeRevenue)}
+              unit="تومان"
+              sub={`فروش ${n(totalSoldTonnage)} kg گوشت` }
+            />
+            <Stat
+              icon="📈"
+              label="سود ناخالص بازرگانی"
+              value={short(totalTradeGrossProfit)}
+              unit="تومان"
+              sub={`حاشیه سود: ${overallTradeMarginPct.toFixed(1)}%` }
+              tone={totalTradeGrossProfit >= 0 ? 'green' : 'red'}
+            />
+            <Stat
+              icon="⏳"
+              label="هشدار انقضا (FEFO)"
+              value={n(criticalExpiryLots.length)}
+              sub={criticalExpiryLots.length ? 'پارت نزدیک به انقضا!' : 'تمام پارت‌ها سالم'}
+              tone={criticalExpiryLots.length ? 'red' : 'green'}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['all', 'active', 'sold_out', 'expired'] as const).map((filterKey) => {
+                const labels: Record<string, string> = {
+                  all: `همه پارت‌ها (${tradeLots.length})`,
+                  active: 'موجود در سردخانه',
+                  sold_out: 'تسویه‌شده / فروش کامل',
+                  expired: 'منقضی‌شده',
+                };
+                return (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    className={`btn sm ${lotStatusFilter === filterKey ? 'primary' : ''}`}
+                    onClick={() => setLotStatusFilter(filterKey)}
+                  >
+                    {labels[filterKey]}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className="btn primary sm"
+              onClick={() => ui.open(<TradeLotForm onClose={ui.close} />)}
+            >
+              <Icon name="plus" size={14} /> تعریف پارت جدید
+            </button>
+          </div>
+
+          {filteredLots.length === 0 ? (
+            <Empty
+              title="پارت بازرگانی یافت نشد"
+              text="تاکنون پارت گوشت منجمد با این مشخصات در سردخانه ثبت نشده است."
+              action={
+                <button
+                  className="btn primary"
+                  onClick={() => ui.open(<TradeLotForm onClose={ui.close} />)}
+                >
+                  <Icon name="plus" size={16} /> ثبت اولین پارت بازرگانی
+                </button>
+              }
+            />
+          ) : (
+            <div className="grid grid-2" style={{ gap: 16 }}>
+              {filteredLots.map((lot) => {
+                const fefo = getLotFefoStatus(lot.expiryDate);
+                const prof = lotProfitSummary(lot);
+                const remainingPct = num(lot.initialWeightKg) > 0 ? (prof.remainingKg / num(lot.initialWeightKg)) * 100 : 0;
+                const wh = s.warehouses.find((w) => w.id === lot.warehouseId);
+
+                return (
+                  <div key={lot.id} className="card p-4 space-y-3" style={{ border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 20 }}>❄️</span>
+                          <h3 style={{ margin: 0, fontSize: 16 }}>{lot.productName}</h3>
+                          <span className="badge blue font-mono">{lot.code}</span>
+                          <span className={`badge ${fefo.badgeClass} font-bold`}>
+                            {fefo.label}
+                          </span>
+                        </div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
+                          {lot.supplierName ? `تامین‌کننده: ${lot.supplierName} | ` : ''}
+                          {wh ? `انبار: ${wh.name} | ` : ''}
+                          دمای نگهداری: {lot.temperatureC ?? -18}°C
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="btn sm"
+                          onClick={() => ui.open(<TradeLotForm lot={lot} onClose={ui.close} />)}
+                        >
+                          <Icon name="pencil" size={14} /> ویرایش
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* نوار پیشرفت خروج / فروش */}
+                    <div style={{ background: 'var(--surface-sunken)', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 6 }}>
+                        <span>
+                          موجودی سردخانه: <b className="font-mono text-accent">{n(prof.remainingKg)} kg</b> ({remainingPct.toFixed(0)}%)
+                        </span>
+                        <span>
+                          فروخته‌شده: <b className="font-mono">{n(prof.soldKg)} kg</b> از {n(lot.initialWeightKg)} kg
+                        </span>
+                      </div>
+                      <div style={{ height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${100 - remainingPct}%`,
+                            background: 'var(--primary)',
+                            borderRadius: 4,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* اطلاعات مالی و بهای تمام‌شده */}
+                    <div className="grid grid-3" style={{ background: 'var(--surface-sunken)', borderRadius: 8, padding: '10px 12px', gap: 8 }}>
+                      <div>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>بهای مؤثر هر کیلو</span>
+                        <div style={{ fontWeight: 700, marginTop: 2, fontFamily: 'monospace' }}>
+                          {money(prof.effectiveCostPerKg)} تومان
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>میانگین نرخ فروش</span>
+                        <div style={{ fontWeight: 700, marginTop: 2, fontFamily: 'monospace', color: 'var(--primary)' }}>
+                          {lot.avgSellPricePerKg ? `${money(lot.avgSellPricePerKg)} تومان` : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>سود ناخالص فروش</span>
+                        <div style={{ fontWeight: 700, marginTop: 2, fontFamily: 'monospace', color: prof.grossProfit >= 0 ? '#166534' : '#991B1B' }}>
+                          {money(prof.grossProfit)} تومان ({prof.profitMarginPct}%)
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* سوابق فروش‌های انجام‌شده */}
+                    {lot.sales && lot.sales.length > 0 && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          آخرین فروش‌های ثبت‌شده از این پارت:
+                        </span>
+                        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {lot.sales.slice(-3).reverse().map((sale, sIdx) => (
+                            <div
+                              key={sIdx}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                fontSize: '0.8rem',
+                                padding: '4px 8px',
+                                background: 'var(--surface-sunken)',
+                                borderRadius: 6,
+                              }}
+                            >
+                              <span>{sale.date} — {sale.buyerName || 'مشتری'}</span>
+                              <span className="font-mono">
+                                {n(sale.qtyKg)} kg @ {money(sale.pricePerKg)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* دکمه‌های اقدام زیر کارت */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4 }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        تاریخ ورود: {lot.entryDate} | انقضا: {lot.expiryDate}
+                      </span>
+                      <button
+                        className="btn primary sm"
+                        disabled={prof.remainingKg <= 0}
+                        onClick={() => setSellingLot(lot)}
+                      >
+                        <Icon name="upload" size={14} /> ثبت فروش از پارت
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {sellingLot && (
+        <LotSaleForm lot={sellingLot} onClose={() => setSellingLot(null)} />
       )}
 
       {mainTab === 'moves' && (

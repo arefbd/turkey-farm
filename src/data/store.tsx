@@ -37,6 +37,9 @@ import type {
   SlaughterBatch,
   SlaughterCut,
   StockMove,
+  TradeLot,
+  TradeLotStatus,
+  LotSaleRecord,
   Settings,
   Totals,
   Transaction,
@@ -223,6 +226,39 @@ function normalize(s: AppState): AppState {
     targetWarehouseId: sb.targetWarehouseId || '',
     stockUpdated: !!sb.stockUpdated,
     notes: sb.notes || '',
+  }));
+  next.tradeLots = (next.tradeLots || []).map((tl) => ({
+    ...tl,
+    code: tl.code || '',
+    productName: String(tl.productName || '').trim(),
+    supplierName: tl.supplierName || '',
+    supplierId: tl.supplierId || '',
+    entryDate: J.norm(tl.entryDate) || tl.entryDate || '',
+    productionDate: tl.productionDate ? J.norm(tl.productionDate) || tl.productionDate : '',
+    expiryDate: J.norm(tl.expiryDate) || tl.expiryDate || '',
+    warehouseId: tl.warehouseId || '',
+    temperatureC: tl.temperatureC != null ? num(tl.temperatureC) : -18,
+    initialWeightKg: num(tl.initialWeightKg),
+    soldWeightKg: num(tl.soldWeightKg),
+    buyPricePerKg: num(tl.buyPricePerKg),
+    transportCost: num(tl.transportCost),
+    storageCost: num(tl.storageCost),
+    packagingCost: num(tl.packagingCost),
+    effectiveCostPerKg: num(tl.effectiveCostPerKg),
+    avgSellPricePerKg: num(tl.avgSellPricePerKg),
+    sales: (tl.sales || []).map((s) => ({
+      ...s,
+      date: J.norm(s.date) || s.date || '',
+      qtyKg: num(s.qtyKg),
+      pricePerKg: num(s.pricePerKg),
+      buyerName: s.buyerName || '',
+      buyerId: s.buyerId || '',
+      invoiceNo: s.invoiceNo || '',
+      notes: s.notes || '',
+    })),
+    status: (tl.status || 'active') as TradeLotStatus,
+    stockUpdated: !!tl.stockUpdated,
+    notes: tl.notes || '',
   }));
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
@@ -761,6 +797,93 @@ export const actions = {
       }
     }
     actions.remove('slaughterBatches', id);
+  },
+
+  /** ثبت یا ویرایش پارت بازرگانی و تنظیم موجودی سردخانه */
+  saveTradeLot(lot: Omit<TradeLot, 'id' | 'createdAt'> & { id?: string }): void {
+    const existing = lot.id ? state.tradeLots.find((l) => l.id === lot.id) : null;
+    const lotId = lot.id || uid();
+
+    // موجودی باقیمانده
+    const remainingKg = Math.max(0, num(lot.initialWeightKg) - num(lot.soldWeightKg));
+
+    // ۱. اصلاح موجودی در صورت ویرایش
+    if (existing && existing.stockUpdated && existing.productName) {
+      const prevRemaining = Math.max(0, num(existing.initialWeightKg) - num(existing.soldWeightKg));
+      if (prevRemaining > 0) {
+        actions.adjustStock({ [existing.productName]: -prevRemaining }, {
+          date: lot.entryDate,
+          reason: `اصلاح پارت بازرگانی ${existing.code} (برگشت موجودی)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+
+    // ۲. شارژ موجودی جدید
+    if (lot.stockUpdated && lot.productName && remainingKg > 0) {
+      actions.adjustStock({ [lot.productName]: remainingKg }, {
+        date: lot.entryDate,
+        reason: `ورود پارت بازرگانی گوشت منجمد ${lot.code}`,
+        refType: 'manual',
+        refId: lotId,
+      });
+    }
+
+    if (existing) {
+      actions.update('tradeLots', existing.id, lot);
+    } else {
+      actions.add('tradeLots', { ...lot, id: lotId } as any);
+    }
+  },
+
+  /** حذف پارت بازرگانی با کسر موجودی از انبار */
+  removeTradeLot(id: string): void {
+    const existing = state.tradeLots.find((l) => l.id === id);
+    if (existing && existing.stockUpdated && existing.productName) {
+      const remaining = Math.max(0, num(existing.initialWeightKg) - num(existing.soldWeightKg));
+      if (remaining > 0) {
+        actions.adjustStock({ [existing.productName]: -remaining }, {
+          date: existing.entryDate,
+          reason: `حذف پارت بازرگانی ${existing.code} (کسر از سردخانه)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+    actions.remove('tradeLots', id);
+  },
+
+  /** ثبت فروش از پارت بازرگانی با اعمال FEFO و کسر موجودی */
+  recordLotSale(lotId: string, sale: Omit<LotSaleRecord, 'id'>): void {
+    const lot = state.tradeLots.find((l) => l.id === lotId);
+    if (!lot) return;
+
+    const saleQty = num(sale.qtyKg);
+    if (saleQty <= 0) return;
+
+    const newSales = [...(lot.sales || []), { ...sale, id: uid() }];
+    const newSoldWeight = num(lot.soldWeightKg) + saleQty;
+    const totalSalesRev = newSales.reduce((s, cur) => s + num(cur.qtyKg) * num(cur.pricePerKg), 0);
+    const avgSellPrice = newSoldWeight > 0 ? Math.round(totalSalesRev / newSoldWeight) : 0;
+    const isSoldOut = newSoldWeight >= num(lot.initialWeightKg);
+
+    // کسر از موجودی کاردکس سردخانه در صورت فعال بودن stockUpdated
+    if (lot.stockUpdated && lot.productName) {
+      actions.adjustStock({ [lot.productName]: -saleQty }, {
+        date: sale.date,
+        reason: `فروش از پارت ${lot.code} (${sale.buyerName || 'مشتری'})`,
+        refType: 'manual',
+        refId: lotId,
+      });
+    }
+
+    actions.update('tradeLots', lotId, {
+      sales: newSales,
+      soldWeightKg: newSoldWeight,
+      avgSellPricePerKg: avgSellPrice,
+      status: isSoldOut ? 'sold_out' : lot.status,
+    });
   },
 
   setSettings(patch: Partial<Settings>): void {
@@ -1807,4 +1930,74 @@ export function suggestTransfers(rows: Settlement['rows'], surplus = 0): Transfe
     if (Math.abs(creditors[j].v) < 1000) j++;
   }
   return out;
+}
+
+/* ------------------ پارت‌های بازرگانی و تجارت گوشت (FEFO) ------------------ */
+
+/** وضعیت انقضا و اولویت‌بندی خروج انبار بر اساس FEFO (First-Expired, First-Out) */
+export function getLotFefoStatus(expiryDate: string): {
+  daysLeft: number;
+  status: 'safe' | 'warning' | 'critical' | 'expired';
+  label: string;
+  badgeClass: string;
+} {
+  if (!expiryDate) {
+    return { daysLeft: 999, status: 'safe', label: 'بدون انقضا', badgeClass: 'gray' };
+  }
+  const t = J.today();
+  const days = J.diff(t, expiryDate);
+  if (days < 0) {
+    return { daysLeft: days, status: 'expired', label: `منقضی شده (${Math.abs(days)} روز قبل)`, badgeClass: 'red' };
+  }
+  if (days <= 30) {
+    return { daysLeft: days, status: 'critical', label: `بحرانی (${days} روز)`, badgeClass: 'red' };
+  }
+  if (days <= 60) {
+    return { daysLeft: days, status: 'warning', label: `اولویت خروج (${days} روز)`, badgeClass: 'warn' };
+  }
+  return { daysLeft: days, status: 'safe', label: `سالم (${days} روز)`, badgeClass: 'green' };
+}
+
+/** خلاصه شاخص‌های سودآوری و بهای تمام‌شده یک پارت بازرگانی */
+export function lotProfitSummary(lot: TradeLot): {
+  remainingKg: number;
+  soldKg: number;
+  totalCost: number;
+  effectiveCostPerKg: number;
+  revenue: number;
+  cogs: number;
+  grossProfit: number;
+  profitMarginPct: number;
+  roiPct: number;
+} {
+  const initialW = num(lot.initialWeightKg);
+  const soldKg = num(lot.soldWeightKg);
+  const remainingKg = Math.max(0, initialW - soldKg);
+
+  const buyTotal = initialW * num(lot.buyPricePerKg);
+  const totalCost = buyTotal + num(lot.transportCost) + num(lot.storageCost) + num(lot.packagingCost);
+  const effectiveCostPerKg =
+    lot.effectiveCostPerKg > 0
+      ? num(lot.effectiveCostPerKg)
+      : initialW > 0
+        ? Math.round(totalCost / initialW)
+        : num(lot.buyPricePerKg);
+
+  const revenue = (lot.sales || []).reduce((sum, s) => sum + num(s.qtyKg) * num(s.pricePerKg), 0);
+  const cogs = Math.round(soldKg * effectiveCostPerKg);
+  const grossProfit = revenue - cogs;
+  const profitMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+  const roiPct = cogs > 0 ? (grossProfit / cogs) * 100 : 0;
+
+  return {
+    remainingKg,
+    soldKg,
+    totalCost,
+    effectiveCostPerKg,
+    revenue,
+    cogs,
+    grossProfit,
+    profitMarginPct: Math.round(profitMarginPct * 10) / 10,
+    roiPct: Math.round(roiPct * 10) / 10,
+  };
 }
