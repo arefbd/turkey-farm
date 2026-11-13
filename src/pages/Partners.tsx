@@ -1,11 +1,12 @@
 /** شرکا، آورده‌ها، تسویه حساب، واحدهای مشارکت و معاملات دلالی */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Avatar, Empty, PageHead, Row, SectionHead, Stat } from '../components/ui';
 import {
   actions,
   flockSharePercents,
+  flockStats,
   num,
   partnerById,
   settlement,
@@ -32,17 +33,47 @@ export function Partners() {
   const s = useApp();
   const ui = useUI();
   const [mainTab, setMainTab] = useState<MainTab>('settle');
-  const [selectedFlockId, setSelectedFlockId] = useState<string>('all');
+  // انتخاب چندگانه گله‌ها: خالی یعنی همه گله‌ها (کل مزرعه)
+  const [selectedFlockIds, setSelectedFlockIds] = useState<string[]>([]);
 
-  const filter = selectedFlockId !== 'all' ? { flockId: selectedFlockId } : {};
+  const filter = useMemo(() => {
+    if (selectedFlockIds.length === 0) return {};
+    if (selectedFlockIds.length === 1) return { flockId: selectedFlockIds[0] };
+    return { flockIds: selectedFlockIds };
+  }, [selectedFlockIds]);
+
   const settle = settlement(s, filter);
-  const selectedFlock = selectedFlockId !== 'all' ? s.flocks.find((f) => f.id === selectedFlockId) : null;
-  const flockShares = selectedFlock ? flockSharePercents(s, selectedFlock.id) : null;
-  const shareTotal = flockShares
-    ? Object.values(flockShares).reduce((a, b) => a + b, 0)
-    : 100;
 
+  // محاسبات سرجمع گله‌های انتخابی
+  const totalRevenue = settle.rows.reduce((sum, r) => sum + r.shareRevenue, 0);
+  const totalExpense = settle.rows.reduce((sum, r) => sum + r.shareExpenseTotal, 0);
+  const totalProfit = totalRevenue - totalExpense;
   const totalCapital = settle.rows.reduce((a, r) => a + r.capital, 0);
+  const totalPaidDirect = settle.rows.reduce((a, r) => a + r.paidDirect + r.paidOut, 0);
+  const totalReceived = settle.rows.reduce((a, r) => a + r.received, 0);
+  const totalBalance = settle.rows.reduce((a, r) => a + r.balance, 0);
+
+  // تفکیک مالی تک‌تک گله‌های فارم
+  const perFlockAnalysis = useMemo(() => {
+    return s.flocks.map((f) => {
+      const fSettle = settlement(s, { flockId: f.id });
+      const fShares = flockSharePercents(s, f.id);
+      const fStats = flockStats(s, f.id);
+      const fRev = fSettle.rows.reduce((sum, r) => sum + r.shareRevenue, 0);
+      const fExp = fSettle.rows.reduce((sum, r) => sum + r.shareExpenseTotal, 0);
+      const fProf = fRev - fExp;
+      return {
+        flock: f,
+        settle: fSettle,
+        shares: fShares,
+        stats: fStats,
+        revenue: fRev,
+        expense: fExp,
+        profit: fProf,
+      };
+    });
+  }, [s]);
+
   const deals = s.deals.slice().sort((a, b) => b.date.localeCompare(a.date));
   const transfers = suggestTransfers(settle.rows, settle.surplus);
 
@@ -174,71 +205,129 @@ export function Partners() {
 
       {mainTab === 'settle' && (
         <>
-          {/* نوار انتخاب گله مبنای تسویه */}
-          <div className="card" style={{ padding: '12px 16px', marginBottom: 12 }}>
+          {/* کارت‌های آماری سرجمع گله‌های انتخابی */}
+          <div className="stats">
+            <Stat
+              icon="💰"
+              label="کل درآمد گله‌های انتخابی"
+              value={short(totalRevenue)}
+              unit="تومان"
+              sub="فروش زنده، گوشت، کود و معاملات"
+              tone="green"
+            />
+            <Stat
+              icon="💸"
+              label="کل هزینه‌های دوره"
+              value={short(totalExpense)}
+              unit="تومان"
+              sub="دان، جوجه، دارو، انرژی و کشتار"
+              tone="red"
+            />
+            <Stat
+              icon="📈"
+              label="سود / زیان خالص دوره"
+              value={short(totalProfit)}
+              unit="تومان"
+              sub={totalProfit >= 0 ? 'سودآوری خالص' : 'زیان دوره'}
+              tone={totalProfit >= 0 ? 'green' : 'red'}
+            />
+            <Stat
+              icon="🏦"
+              label="مجموع آورده نقدی شرکا"
+              value={short(totalCapital)}
+              unit="تومان"
+              sub={`${n(settle.rows.length)} شریک`}
+            />
+          </div>
+
+          {/* نوار انتخاب چندگانه گله‌ها */}
+          <div className="card mt" style={{ padding: '12px 16px', marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>🎯 گله مبنای تسویه:</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>🎯 فیلتر گله مبنای تسویه:</span>
                 <span className="badge purple" style={{ fontSize: 12, padding: '4px 10px' }}>
-                  {selectedFlock ? `گله ${selectedFlock.name}` : 'کل مزرعه (همه گله‌ها)'}
+                  {selectedFlockIds.length === 0
+                    ? '🌍 کل مزرعه (همه گله‌ها)'
+                    : selectedFlockIds.length === 1
+                    ? `🎯 گله ${s.flocks.find((f) => f.id === selectedFlockIds[0])?.name}`
+                    : `📊 تجمیعی ${selectedFlockIds.length} گله (${selectedFlockIds.map((id) => s.flocks.find((f) => f.id === id)?.name).join(' + ')})`}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                {selectedFlock
-                  ? `درصد سهام بر اساس سهم هر شریک در گله ${selectedFlock.name}`
-                  : 'نمایش سرجمع کلیه حساب‌ها و معاملات'}
+                {selectedFlockIds.length === 1
+                  ? 'نمایش حسابداری کاملاً تفکیک‌شده و مجزای این گله'
+                  : 'امکان انتخاب یک یا چند گله به صورت همزمان (کلیک برای فعال/غیرفعال کردن)'}
               </div>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
               <button
                 type="button"
-                className={`btn sm ${selectedFlockId === 'all' ? 'primary' : ''}`}
-                onClick={() => setSelectedFlockId('all')}
+                className={`btn sm ${selectedFlockIds.length === 0 ? 'primary' : ''}`}
+                onClick={() => setSelectedFlockIds([])}
                 style={{ borderRadius: 20 }}
               >
                 🌐 همه گله‌ها (کل مزرعه)
               </button>
-              {s.flocks.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  className={`btn sm ${selectedFlockId === f.id ? 'primary' : ''}`}
-                  style={{
-                    borderRadius: 20,
-                    border: selectedFlockId === f.id ? 'none' : '1px solid var(--border)',
-                    background: selectedFlockId === f.id ? undefined : '#FFF',
-                  }}
-                  onClick={() => setSelectedFlockId(f.id)}
-                >
-                  🦃 {f.name} {f.status === 'closed' ? '(بسته)' : ''}
-                </button>
-              ))}
+              {s.flocks.map((f) => {
+                const isSelected = selectedFlockIds.includes(f.id);
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`btn sm ${isSelected ? 'primary' : ''}`}
+                    style={{
+                      borderRadius: 20,
+                      border: isSelected ? 'none' : '1px solid var(--border)',
+                      background: isSelected ? undefined : '#FFF',
+                    }}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedFlockIds((prev) => prev.filter((id) => id !== f.id));
+                      } else {
+                        setSelectedFlockIds((prev) => [...prev, f.id]);
+                      }
+                    }}
+                  >
+                    {isSelected ? '✓ ' : ''}🦃 {f.name} {f.status === 'closed' ? '(بسته)' : ''}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* جدول اصلی صورت تسویه و سود/زیان شرکا */}
           <div className="card">
             <SectionHead
-              title={selectedFlock ? `مانده حساب شرکا در گله ${selectedFlock.name}` : 'مانده حساب شرکا در کل مزرعه'}
-              sub={`${n(settle.rows.length)} شریک`}
+              title={
+                selectedFlockIds.length === 1
+                  ? `صورت تسویه و سود/زیان تفکیکی ${s.flocks.find((f) => f.id === selectedFlockIds[0])?.name}`
+                  : selectedFlockIds.length > 1
+                  ? `صورت تجمیعی تسویه و سود/زیان ${selectedFlockIds.length} گله انتخابی`
+                  : 'صورت تجمیعی تسویه و سود/زیان شرکا در کل مزرعه'
+              }
+              sub={`${n(settle.rows.length)} شریک — بر مبنای درصد دقیق سهام هر گله`}
             />
             <div className="tbl-wrap">
               <table className="tbl">
                 <thead>
                   <tr>
                     <th>شریک</th>
-                    <th>سهم</th>
-                    <th>آورده</th>
+                    <th>درصد سهم</th>
+                    <th>سهم از درآمد (فروش)</th>
+                    <th>سهم از کل هزینه</th>
+                    <th>سود / زیان سهم شریک</th>
+                    <th>آورده نقدی</th>
                     <th>پرداخت مستقیم</th>
-                    <th>سهم از هزینه</th>
-                    <th>سهم از معاملات</th>
-                    <th>مانده</th>
+                    <th>برداشتی / دریافتی</th>
+                    <th>مانده نهایی تسویه</th>
                     <th>وضعیت</th>
                   </tr>
                 </thead>
                 <tbody>
                   {settle.rows.map((r) => {
                     const pos = r.balance >= 0;
+                    const profitPos = r.shareProfit >= 0;
                     return (
                       <tr key={r.id}>
                         <td>
@@ -247,18 +336,26 @@ export function Partners() {
                         <td>
                           <b style={{ color: 'var(--primary, #6D28D9)' }}>{pct(r.share, 2)}</b>
                         </td>
-                        <td className="num-cell">{n(r.capital)}</td>
-                        <td className="num-cell">{n(r.paidDirect)}</td>
-                        <td className="num-cell">{n(r.shareExp)}</td>
+                        <td className="num-cell" style={{ color: '#059669', fontWeight: 600 }}>
+                          {money(r.shareRevenue)}
+                        </td>
+                        <td className="num-cell" style={{ color: '#DC2626' }}>
+                          {money(r.shareExpenseTotal)}
+                        </td>
                         <td
                           className="num-cell"
-                          style={{ color: r.shareTx >= 0 ? '#059669' : '#DC2626' }}
-                          title={`خرید: ${n(r.shareBuy)} — فروش: ${n(r.shareSell)}`}
+                          style={{
+                            color: profitPos ? '#059669' : '#DC2626',
+                            fontWeight: 700,
+                          }}
                         >
-                          {n(r.shareTx)}
+                          {money(r.shareProfit)}
                         </td>
-                        <td className="num-cell" style={{ color: pos ? '#059669' : '#DC2626' }}>
-                          <b>{n(r.balance)}</b>
+                        <td className="num-cell">{money(r.capital)}</td>
+                        <td className="num-cell">{money(r.paidDirect + r.paidOut)}</td>
+                        <td className="num-cell">{money(r.received)}</td>
+                        <td className="num-cell" style={{ color: pos ? '#059669' : '#DC2626', fontWeight: 700 }}>
+                          {money(r.balance)}
                         </td>
                         <td>
                           <span className={'badge ' + (pos ? 'green' : 'red')}>
@@ -268,38 +365,136 @@ export function Partners() {
                       </tr>
                     );
                   })}
-                  <tr style={{ background: '#FBF9FF' }}>
+                  <tr style={{ background: 'var(--surface-sunken)', fontWeight: 700 }}>
                     <td>
-                      <b>جمع</b>
+                      <b>جمع کل:</b>
                     </td>
-                    <td>{pct(shareTotal, 1)}</td>
-                    <td className="num-cell">{n(totalCapital)}</td>
-                    <td className="num-cell">—</td>
-                    <td className="num-cell">{n(settle.totalExp)}</td>
-                    <td
-                      className="num-cell"
-                      style={{ color: settle.txNet >= 0 ? '#059669' : '#DC2626' }}
-                    >
-                      {n(settle.txNet)}
+                    <td>100%</td>
+                    <td className="num-cell" style={{ color: '#059669' }}>
+                      {money(totalRevenue)}
+                    </td>
+                    <td className="num-cell" style={{ color: '#DC2626' }}>
+                      {money(totalExpense)}
                     </td>
                     <td
                       className="num-cell"
-                      style={{ color: settle.surplus >= 0 ? '#059669' : '#DC2626' }}
+                      style={{ color: totalProfit >= 0 ? '#059669' : '#DC2626' }}
                     >
-                      {n(settle.surplus)}
+                      {money(totalProfit)}
+                    </td>
+                    <td className="num-cell">{money(totalCapital)}</td>
+                    <td className="num-cell">{money(totalPaidDirect)}</td>
+                    <td className="num-cell">{money(totalReceived)}</td>
+                    <td
+                      className="num-cell"
+                      style={{ color: totalBalance >= 0 ? '#059669' : '#DC2626' }}
+                    >
+                      {money(totalBalance)}
                     </td>
                     <td>
-                      <span className="badge gray">موجودی صندوق</span>
+                      <span className="badge gray">موازنه دوره</span>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <div className="hint" style={{ marginTop: 8, lineHeight: 1.9 }}>
-              مانده هر شریک = آورده + پرداخت مستقیم − سهم از هزینه‌ها + سهم از معاملات
+              💡 <b>فرمول محاسبه دقیق حسابداری:</b> سود سهم هر شریک = (سهم از کل درآمد گله) − (سهم از کل هزینه گله).
               <br />
-              «سهم از معاملات» = سهم او از فروش منهای سهم او از بهای خرید (بر اساس درصد ثبت‌شده در هر
-              معامله). عدد مثبت یعنی طلبکار و منفی یعنی بدهکار.
+              مانده نهایی تسویه = سود سهم شریک + آورده‌های نقدی + پرداخت‌های مستقیم از جیب − دریافتی‌ها و برداشت‌ها. عدد سبز یعنی شریک بستانکار است و باید دریافت کند، عدد قرمز یعنی بدهکار است و باید به صندوق واریز کند.
+            </div>
+          </div>
+
+          {/* تفکیک حساب‌های مالی به تفکیک گله‌ها (گزارش بدون تداخل) */}
+          <div className="card mt">
+            <SectionHead
+              title="ماتریس تفکیک سود و زیان و سهم شرکا به تفکیک هر گله"
+              sub="محاسبه مجزا و مستقل حساب‌های هر گله بدون تداخل با سایر گله‌ها"
+            />
+            <div className="grid grid-1 sm:grid-2" style={{ gap: 14 }}>
+              {perFlockAnalysis
+                .filter((pfa) => selectedFlockIds.length === 0 || selectedFlockIds.includes(pfa.flock.id))
+                .map((pfa) => {
+                  return (
+                    <div
+                      key={pfa.flock.id}
+                      className="card p-3 space-y-3"
+                      style={{ border: '1px solid var(--border)', background: 'var(--surface-sunken)' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 18 }}>🦃</span>
+                            <h4 style={{ margin: 0 }}>{pfa.flock.name}</h4>
+                            <span className={`badge ${pfa.flock.status === 'closed' ? 'gray' : 'green'}`}>
+                              {pfa.flock.status === 'closed' ? 'پایان دوره' : 'در حال پرورش'}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                            سالن: {pfa.flock.hall || 'نامشخص'} | ورود: {pfa.flock.startDate}
+                          </span>
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>
+                            سود خالص گله:
+                          </span>
+                          <span
+                            className="font-mono font-bold"
+                            style={{ color: pfa.profit >= 0 ? '#166534' : '#991B1B' }}
+                          >
+                            {money(pfa.profit)} تومان
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* خلاصه درآمد و هزینه گله */}
+                      <div className="grid grid-2" style={{ fontSize: '0.8rem', gap: 6, background: '#FFF', padding: '6px 10px', borderRadius: 6 }}>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)' }}>درآمد گله:</span>{' '}
+                          <b style={{ color: '#166534' }}>{money(pfa.revenue)}</b>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)' }}>هزینه گله:</span>{' '}
+                          <b style={{ color: '#991B1B' }}>{money(pfa.expense)}</b>
+                        </div>
+                      </div>
+
+                      {/* جدول سهم هر شریک در این گله اختصاصی */}
+                      <table style={{ width: '100%', fontSize: '0.78rem', textAlign: 'right', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                            <th style={{ padding: '4px 6px' }}>شریک</th>
+                            <th style={{ padding: '4px 6px' }}>درصد سهم</th>
+                            <th style={{ padding: '4px 6px' }}>سهم از درآمد</th>
+                            <th style={{ padding: '4px 6px' }}>سهم از هزینه</th>
+                            <th style={{ padding: '4px 6px' }}>سود سهم</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pfa.settle.rows.map((row) => (
+                            <tr key={row.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '4px 6px' }}>{row.name}</td>
+                              <td style={{ padding: '4px 6px', fontWeight: 600, color: 'var(--primary)' }}>
+                                {pct(pfa.shares[row.id] ?? row.share, 1)}
+                              </td>
+                              <td style={{ padding: '4px 6px', color: '#166534' }}>{money(row.shareRevenue)}</td>
+                              <td style={{ padding: '4px 6px', color: '#991B1B' }}>{money(row.shareExpenseTotal)}</td>
+                              <td
+                                style={{
+                                  padding: '4px 6px',
+                                  fontWeight: 700,
+                                  color: row.shareProfit >= 0 ? '#166534' : '#991B1B',
+                                }}
+                              >
+                                {money(row.shareProfit)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
             </div>
           </div>
 

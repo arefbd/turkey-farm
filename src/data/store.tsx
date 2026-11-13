@@ -1789,30 +1789,40 @@ export function settlement(s: AppState, filter: ExpenseFilter = {}): Settlement 
     let effectiveShare = 0;
     if (targetFlockIds.length === 1) {
       const fShares = flockSharePercents(s, targetFlockIds[0]);
-      effectiveShare = fShares[p.id] ?? num(p.share);
+      effectiveShare = fShares[p.id] != null ? fShares[p.id] : (num(p.share) || 0);
     } else if (targetFlockIds.length > 1) {
-      if (totalSalesRevenue > 0) {
+      if (totalSalesRevenue > 0 && shareRevenue > 0) {
         effectiveShare = (shareRevenue / totalSalesRevenue) * 100;
       } else {
         let sumP = 0;
+        let count = 0;
         targetFlockIds.forEach((fid) => {
-          sumP += flockSharePercents(s, fid)[p.id] || 0;
+          const sh = flockSharePercents(s, fid)[p.id];
+          if (sh != null) {
+            sumP += sh;
+            count++;
+          }
         });
-        effectiveShare = sumP / targetFlockIds.length;
+        effectiveShare = count > 0 ? sumP / count : (num(p.share) || 0);
       }
     } else {
-      if (totalSalesRevenue > 0) {
+      if (totalSalesRevenue > 0 && shareRevenue > 0) {
         effectiveShare = (shareRevenue / totalSalesRevenue) * 100;
       } else {
-        const actives = activeFlocks(s);
-        if (actives.length > 0) {
+        const flocksWithShares = s.flocks.filter((f) => f.shares && f.shares.length > 0);
+        if (flocksWithShares.length > 0) {
           let sumP = 0;
-          actives.forEach((f) => {
-            sumP += flockSharePercents(s, f.id)[p.id] || 0;
+          let count = 0;
+          flocksWithShares.forEach((f) => {
+            const sh = flockSharePercents(s, f.id)[p.id];
+            if (sh != null) {
+              sumP += sh;
+              count++;
+            }
           });
-          effectiveShare = sumP / actives.length;
+          effectiveShare = count > 0 ? sumP / count : (num(p.share) || 0);
         } else {
-          effectiveShare = num(p.share);
+          effectiveShare = num(p.share) || 0;
         }
       }
     }
