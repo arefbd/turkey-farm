@@ -365,14 +365,23 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
           <b style={{ fontSize: '1.05rem' }}>{n(totals.energy, 0)} kcal</b>
         </div>
         <div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>موازنه ترکیب فرمول</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {mode === 'percent' ? 'جمع درصدها (مبنای ۱۰۰٪)' : 'جمع وزن‌ها / نسبت‌ها'}
+          </div>
           <b
             style={{
               fontSize: '1.05rem',
-              color: Math.abs(totals.pct - 100) < 0.5 ? '#059669' : '#DC2626',
+              color:
+                mode === 'percent'
+                  ? Math.abs(totals.pct - 100) < 0.5
+                    ? '#059669'
+                    : '#DC2626'
+                  : 'var(--primary)',
             }}
           >
-            {n(totals.pct, 1)}٪ {Math.abs(totals.pct - 100) < 0.5 ? '✓' : '⚠️'}
+            {mode === 'percent'
+              ? `${n(totals.pct, 1)}٪ ${Math.abs(totals.pct - 100) < 0.5 ? '✓' : '⚠️'}`
+              : `${n(totalUnits)} کیلوگرم (نسبتی)`}
           </b>
         </div>
       </div>

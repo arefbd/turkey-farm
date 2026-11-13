@@ -196,18 +196,28 @@ export function DecimalInput({
 
   return (
     <input
+      type="text"
       className={className}
       inputMode="decimal"
       placeholder={placeholder}
       value={text}
+      onKeyDown={(e) => {
+        if (e.key === 'Decimal' || e.key === '.' || e.key === '/' || e.key === '،' || e.key === ',' || e.key === '٫') {
+          // اجازه درج ممیز از صفحه کلید ماشین‌حسابی
+        }
+      }}
       onChange={(e) => {
-        let val = toEn(e.target.value).replace(/[/٫]/g, '.');
-        val = val.replace(/[^0-9.-]/g, '');
+        let val = toEn(e.target.value)
+          .replace(/[/٫،,٬]/g, '.')
+          .replace(/[^0-9.-]/g, '');
         const parts = val.split('.');
         if (parts.length > 2) {
           val = parts[0] + '.' + parts.slice(1).join('');
         }
         setText(val);
+        if (val.endsWith('.')) {
+          return;
+        }
         const parsed = num(val);
         if (min !== undefined && parsed < min) return;
         if (max !== undefined && parsed > max) return;
