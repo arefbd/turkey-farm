@@ -200,6 +200,41 @@ export function Settings() {
             آخرین ذخیره‌سازی: خودکار پس از هر تغییر
           </div>
         </div>
+
+        <div className="card">
+          <SectionHead title="به‌روزرسانی نسخه برنامه و پاکسازی کش PWA" sub="دریافت آنی آخرین تغییرات سرور" />
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14, lineHeight: 1.6 }}>
+            اگر برنامه را روی گوشی نصب کرده‌اید و تغییرات جدید را مشاهده نمی‌کنید، با زدن دکمه زیر حافظه پنهان برنامه به طور کامل پاکسازی شده و آخرین نسخه مستقیماً از سرور دریافت می‌شود.
+          </p>
+          <button
+            type="button"
+            className="btn primary block"
+            onClick={async () => {
+              try {
+                if ('serviceWorker' in navigator) {
+                  const regs = await navigator.serviceWorker.getRegistrations();
+                  for (const reg of regs) {
+                    await reg.unregister();
+                  }
+                }
+                if ('caches' in window) {
+                  const keys = await caches.keys();
+                  for (const k of keys) {
+                    await caches.delete(k);
+                  }
+                }
+                ui.toast('حافظه موقت پاکسازی شد، در حال دریافت آخرین نسخه...');
+                setTimeout(() => {
+                  window.location.reload();
+                }, 600);
+              } catch {
+                window.location.reload();
+              }
+            }}
+          >
+            <Icon name="refresh" size={16} /> به‌روزرسانی آنی به آخرین نسخه و پاکسازی کش
+          </button>
+        </div>
       </div>
 
       <div className="card mt">

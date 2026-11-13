@@ -1,16 +1,16 @@
 /* سرویس‌ورکر مزرعه بوقلمون — کش دارایی‌های ثابت + پشتیبان آفلاین */
-const VERSION = 'v1';
+const VERSION = 'v2.0.1';
 const CACHE = 'turkey-farm-' + VERSION;
 const SCOPE = self.registration.scope;
 
 const PRECACHE = [SCOPE, SCOPE + 'index.html', SCOPE + 'manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(PRECACHE).catch(() => undefined))
-      .then(() => self.skipWaiting()),
+      .then((cache) => cache.addAll(PRECACHE).catch(() => undefined)),
   );
 });
 
@@ -19,7 +19,7 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k.startsWith('turkey-farm-') && k !== CACHE).map((k) => caches.delete(k))),
+        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
       )
       .then(() => self.clients.claim()),
   );

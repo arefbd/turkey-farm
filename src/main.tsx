@@ -18,11 +18,23 @@ createRoot(root).render(
   </StrictMode>,
 );
 
-/* ثبت سرویس‌ورکر — فقط در بیلد نهایی تا با HMR توسعه تداخل نکند */
+/* ثبت و به‌روزرسانی خودکار سرویس‌ورکر PWA */
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register(import.meta.env.BASE_URL + 'sw.js')
+      .then((reg) => {
+        // بررسی فعال نسخه جدید
+        reg.update().catch(() => undefined);
+      })
       .catch((e) => console.warn('ثبت سرویس‌ورکر ناموفق', e));
+
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
   });
 }
