@@ -49,6 +49,8 @@ export interface TxItem {
   unit: string;
   qty: number;
   price: number;
+  batchNo?: string;
+  warehouseId?: string;
 }
 
 export interface TxShare {
@@ -70,6 +72,9 @@ export interface Transaction extends Base {
   hall: string;
   flockId: string;
   warehouse: string;
+  warehouseId?: string;
+  batchNo?: string;
+  invoiceNo?: string;
   items: TxItem[];
   discount: number;
   extraCost: number;
@@ -313,6 +318,8 @@ export interface InventoryItem extends Base {
   note: string;
   /** تاریخ انقضا (شمسی) — برای دارو و واکسن */
   expiry: string;
+  /** موجودی به تفکیک انبارها: شناسه انبار -> مقدار موجودی */
+  warehouseQuantities?: Record<string, number>;
 }
 
 export interface Deal extends Base {
@@ -352,7 +359,28 @@ export interface Transfer extends Base {
 }
 
 /* ---------------------------- حرکات انبار ---------------------------- */
-export type StockMoveKind = 'in' | 'out';
+export type StockMoveKind = 'in' | 'out' | 'transfer';
+
+export type StockInReason =
+  | 'موجودی اولیه'
+  | 'خرید ثبت‌شده از مسیر معاملات'
+  | 'برگشت از مصرف'
+  | 'برگشت از فروش'
+  | 'دریافت از انبار دیگر'
+  | 'ورود محصول تولیدشده'
+  | 'ورود محصول حاصل از فرآوری'
+  | 'تعدیل مثبت موجودی با مجوز'
+  | 'سایر ورودی‌ها';
+
+export type StockOutReason =
+  | 'مصرف در سالن پرورش'
+  | 'مصرف در تولید خوراک'
+  | 'فروش'
+  | 'انتقال به انبار دیگر'
+  | 'برگشت به فروشنده'
+  | 'ضایعات'
+  | 'تعدیل منفی موجودی با مجوز'
+  | 'سایر خروجی‌ها';
 
 export interface StockMove extends Base {
   date: string;
@@ -364,9 +392,25 @@ export interface StockMove extends Base {
   before: number;
   after: number;
   reason: string;
-  refType: 'manual' | 'transaction' | 'adjust';
+  refType: 'manual' | 'transaction' | 'adjust' | 'transfer' | 'consumption' | 'production';
   refId: string;
   note: string;
+  /** شناسه انبار مرجع یا مرتبط */
+  warehouseId?: string;
+  warehouseName?: string;
+  /** انبار مبدأ (برای خروج و انتقال) */
+  sourceWarehouseId?: string;
+  sourceWarehouseName?: string;
+  /** انبار مقصد (برای ورود و انتقال) */
+  targetWarehouseId?: string;
+  targetWarehouseName?: string;
+  /** شماره محموله یا بچ */
+  batchNo?: string;
+  /** شماره فاکتور یا سند مرجع */
+  invoiceNo?: string;
+  /** قیمت واحد و مبلغ کل در صورت وجود */
+  unitPrice?: number;
+  totalCost?: number;
 }
 
 /* --------------------------- کالاها و محصولات --------------------------- */

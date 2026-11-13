@@ -266,7 +266,10 @@ export function TransactionForm({
   const [deposit, setDeposit] = useState(num(editing?.deposit));
   const [hall, setHall] = useState(editing?.hall || '');
   const [flockId, setFlockId] = useState(editing?.flockId || presetFlockId || '');
-  const [warehouse, setWarehouse] = useState(editing?.warehouse || WAREHOUSES[0]);
+  const [warehouse, setWarehouse] = useState(
+    editing?.warehouse || (s.warehouses?.[0]?.name ?? WAREHOUSES[0]),
+  );
+  const [batchNo, setBatchNo] = useState(editing?.batchNo || '');
   const [note, setNote] = useState(editing?.note || '');
   const [discount, setDiscount] = useState(num(editing?.discount));
   const [extraCost, setExtraCost] = useState(num(editing?.extraCost));
@@ -322,6 +325,12 @@ export function TransactionForm({
       toast('حداقل یک قلم کالا با تعداد لازم است', 'error');
       return;
     }
+
+    if (type === 'purchase' && !String(warehouse || '').trim()) {
+      toast('انتخاب انبار مقصد در ثبت خرید الزامی است', 'error');
+      return;
+    }
+
     const items: TxItem[] = rows
       .filter((r) => r.name.trim())
       .map((r) => ({ name: r.name.trim(), unit: r.unit, qty: num(r.qty), price: num(r.price) }));
@@ -346,6 +355,13 @@ export function TransactionForm({
       amount: amounts[i] || 0,
     }));
 
+    const selectedWh = (s.warehouses || []).find((w) => w.name === warehouse || w.id === warehouse);
+    const whId = selectedWh?.id || (s.warehouses?.[0]?.id ?? '');
+    const whName = selectedWh?.name || warehouse;
+
+    const totalQty = items.reduce((a, it) => a + num(it.qty), 0);
+    const costOfGoods = type === 'purchase' && totalQty > 0 ? finalTotal / totalQty : undefined;
+
     const data = {
       code,
       date,
@@ -357,7 +373,10 @@ export function TransactionForm({
       deposit: payMode === 'mixed' ? num(deposit) : payMode === 'cash' ? finalTotal : 0,
       hall,
       flockId,
-      warehouse,
+      warehouse: whName,
+      warehouseId: whId,
+      batchNo: batchNo || undefined,
+      invoiceNo: code,
       items,
       discount: num(discount),
       extraCost: num(extraCost),
@@ -365,6 +384,36 @@ export function TransactionForm({
       shares: txShares,
       shareMode,
       note,
+    };
+
+    const reasonLabel =
+      type === 'purchase'
+        ? 'خرید ثبت‌شده از مسیر معاملات'
+        : type === 'sale'
+        ? 'فروش'
+        : type === 'purchase_return'
+        ? 'برگشت به فروشنده'
+        : type === 'sale_return'
+        ? 'برگشت از فروش'
+        : (TX_TYPE_LABEL[type] || 'معامله');
+
+    const stockMeta = {
+      date,
+      reason: reasonLabel,
+      refType: 'transaction' as const,
+      refId: code,
+      warehouseId: whId,
+      warehouseName: whName,
+      targetWarehouseId: type === 'purchase' || type === 'sale_return' ? whId : undefined,
+      targetWarehouseName: type === 'purchase' || type === 'sale_return' ? whName : undefined,
+      sourceWarehouseId: type === 'sale' || type === 'purchase_return' ? whId : undefined,
+      sourceWarehouseName: type === 'sale' || type === 'purchase_return' ? whName : undefined,
+      batchNo: batchNo || undefined,
+      invoiceNo: code,
+      note: note || undefined,
+      unitPrice: items[0] ? num(items[0].price) : undefined,
+      totalCost: finalTotal,
+      costOfGoods,
     };
 
     // به‌روزرسانی موجودی انبار: ابتدا اثر قبلی برگشت، سپس اثر جدید اعمال می‌شود
@@ -375,20 +424,10 @@ export function TransactionForm({
       Object.entries(fwd).forEach(([k, v]) => {
         merged[k] = (merged[k] || 0) + v;
       });
-      actions.adjustStock(merged, {
-        date,
-        reason: TX_TYPE_LABEL[type] || 'معامله',
-        refType: 'transaction',
-        refId: code,
-      });
+      actions.adjustStock(merged, stockMeta);
       actions.update('transactions', editing.id, data as Partial<Transaction>);
     } else {
-      actions.adjustStock(txStockDelta(data as unknown as Transaction, 1), {
-        date,
-        reason: TX_TYPE_LABEL[type] || 'معامله',
-        refType: 'transaction',
-        refId: code,
-      });
+      actions.adjustStock(txStockDelta(data as unknown as Transaction, 1), stockMeta);
       actions.add('transactions', data as Transaction);
     }
     toast(editing ? 'معامله ویرایش شد' : 'معامله ثبت شد');
@@ -594,12 +633,16 @@ export function TransactionForm({
           })() : null}
         </div>
         <div className="field third">
-          <label className="lbl">انبار مرتبط</label>
+          <label className="lbl">
+            {type === 'purchase' ? 'انبار مقصد (الزامی) *' : 'انبار مرتبط'}
+          </label>
           <select
             className="input"
             value={warehouse}
             onChange={(e) => setWarehouse(e.target.value)}
+            style={type === 'purchase' && !warehouse ? { borderColor: '#DC2626' } : undefined}
           >
+            <option value="">-- انتخاب انبار --</option>
             {s.warehouses && s.warehouses.length > 0
               ? s.warehouses.map((w) => (
                   <option key={w.id} value={w.name}>
@@ -612,6 +655,28 @@ export function TransactionForm({
                   </option>
                 ))}
           </select>
+        </div>
+      </div>
+
+      <div className="grid grid-2" style={{ gap: 10, marginTop: 4 }}>
+        <div className="field half">
+          <label className="lbl">شماره محموله یا بچ (اختیاری)</label>
+          <input
+            className="input"
+            placeholder="مثلاً B-1405-01 یا بارنامه ۵۰ تن"
+            value={batchNo}
+            onChange={(e) => setBatchNo(e.target.value)}
+          />
+        </div>
+        <div className="field half">
+          <label className="lbl">شماره سند یا فاکتور</label>
+          <input
+            className="input"
+            placeholder="کد فاکتور"
+            value={code}
+            readOnly
+            style={{ background: '#F1F5F9', color: '#64748B' }}
+          />
         </div>
       </div>
 

@@ -169,9 +169,11 @@ export function Transactions() {
                           if (ok) {
                             actions.adjustStock(txStockDelta(t, -1), {
                               date: t.date,
-                              reason: 'حذف سند',
+                              reason: 'حذف سند معامله',
                               refType: 'transaction',
                               refId: t.code,
+                              warehouseId: t.warehouseId,
+                              warehouseName: t.warehouse,
                             });
                             actions.remove('transactions', t.id);
                             ui.toast('سند حذف و موجودی انبار اصلاح شد');

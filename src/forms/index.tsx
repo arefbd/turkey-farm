@@ -10,7 +10,8 @@ import {
   CHICK_TYPES,
   CATEGORIES,
   GOODS_CATS,
-  STOCK_REASONS,
+  STOCK_IN_REASONS,
+  STOCK_OUT_REASONS,
   CAT_MAP,
   INVENTORY_CATS,
   INVENTORY_CAT_TO_EXPENSE,
@@ -33,6 +34,7 @@ import type {
   Task,
   Vaccine,
 } from '../data/types';
+import { TransactionForm } from './crm';
 
 type NewOf<T> = Omit<T, 'id' | 'createdAt'> & { id?: string };
 const asNew = <T,>(o: FormValues) => o as unknown as NewOf<T>;
@@ -1027,6 +1029,16 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
     ...(!editing
       ? [
           {
+            name: 'warehouseId',
+            label: 'انبار استقرار موجودی اولیه',
+            type: 'select' as const,
+            col: 'half' as const,
+            options: (s.warehouses || []).map((w) => ({
+              value: w.id,
+              label: `${w.name} (${w.code})`,
+            })),
+          },
+          {
             name: 'entryDate',
             label: 'تاریخ ورود / موجودی اولیه',
             type: 'date' as const,
@@ -1116,10 +1128,15 @@ export function InventoryItemForm({ id, onClose }: { id?: string; onClose: () =>
         if (editing) {
           actions.update('inventory', editing.id, asPatch<InventoryItem>(data));
         } else {
-          const newItem = asNew<InventoryItem>(data);
+          const initialWhId = String(v.warehouseId || s.warehouses?.[0]?.id || '');
+          const newItem = asNew<InventoryItem>({
+            ...data,
+            warehouseQuantities:
+              initialWhId && num(data.qty) > 0 ? { [initialWhId]: num(data.qty) } : {},
+          });
           actions.add('inventory', newItem);
           if (num(newItem.qty) > 0) {
-            actions.addInitialStockMove(newItem, String(v.entryDate || today()));
+            actions.addInitialStockMove(newItem, String(v.entryDate || today()), undefined, initialWhId);
           }
           if (v.recordExpense && num(newItem.qty) * num(newItem.pricePerKg) > 0) {
             actions.add('expenses', {
@@ -1190,148 +1207,369 @@ export function InventoryMoveForm({
   onClose: () => void;
 }) {
   const s = useApp();
-  const { toast } = useUI();
-  const defaultItem = s.inventory.find((i) => i.id === (itemId || s.inventory[0]?.id));
+  const { toast, open } = useUI();
 
-  const fields: FieldDef[] = [
-    {
-      name: 'itemId',
-      label: 'کالا',
-      type: 'select',
-      required: true,
-      col: 'half',
-      options: s.inventory.map((i) => ({ value: i.id, label: `${i.name} (موجودی: ${n(i.qty)} ${i.unit})` })),
-    },
-    {
-      name: 'kind',
-      label: 'نوع تراکنش',
-      type: 'select',
-      col: 'half',
-      options: [
-        { value: 'in', label: 'ورود به انبار' },
-        { value: 'out', label: 'خروج از انبار' },
-      ],
-    },
-    { name: 'date', label: 'تاریخ', type: 'date', required: true, col: 'half' },
-    { name: 'qty', label: 'مقدار', type: 'number', required: true, col: 'half' },
-    {
-      name: 'unitPrice',
-      label: 'قیمت واحد (تومان)',
-      type: 'money',
-      col: 'half',
-      hint: 'فی هر واحد کالا',
-    },
-    {
-      name: 'cost',
-      label: 'مبلغ کل (تومان)',
-      type: 'money',
-      col: 'half',
-      hint: 'حاصل‌ضرب مقدار در قیمت واحد',
-    },
-    {
-      name: 'recordExpense',
-      label: 'آیا به عنوان هزینه در حسابداری ثبت شود؟',
-      type: 'checkbox',
-      col: 'full',
-    },
-    {
-      name: 'reason',
-      label: 'دلیل حرکت',
-      type: 'select',
-      required: true,
-      col: 'half',
-      options: STOCK_REASONS,
-    },
-    {
-      name: 'flockId',
-      label: 'گله',
-      type: 'select',
-      col: 'half',
-      options: [
-        { value: '', label: 'عمومی مزرعه' },
-        ...s.flocks.map((f) => ({ value: f.id, label: f.name })),
-      ],
-    },
-    { name: 'note', label: 'توضیح', type: 'text', col: 'full' },
-  ];
+  const [opKind, setOpKind] = useState<'in' | 'out' | 'transfer'>('in');
+  const [selectedItemId, setSelectedItemId] = useState<string>(
+    itemId || s.inventory[0]?.id || '',
+  );
+  const [sourceWhId, setSourceWhId] = useState<string>(s.warehouses?.[0]?.id || '');
+  const [targetWhId, setTargetWhId] = useState<string>(
+    s.warehouses?.[1]?.id || s.warehouses?.[0]?.id || '',
+  );
+  const [qty, setQty] = useState<number>(0);
+  const [date, setDate] = useState<string>(today());
+  const [refId, setRefId] = useState<string>('');
+  const [batchNo, setBatchNo] = useState<string>('');
+  const [reason, setReason] = useState<string>(STOCK_IN_REASONS[0]);
+  const [note, setNote] = useState<string>('');
+
+  const currentItem = s.inventory.find((i) => i.id === selectedItemId);
+  const unit = currentItem?.unit || 'واحد';
+
+  const sourceWhStock =
+    currentItem && sourceWhId ? num(currentItem.warehouseQuantities?.[sourceWhId] || 0) : 0;
+  const targetWhStock =
+    currentItem && targetWhId ? num(currentItem.warehouseQuantities?.[targetWhId] || 0) : 0;
+  const totalItemStock = currentItem ? num(currentItem.qty) : 0;
+
+  const handleOpChange = (newOp: 'in' | 'out' | 'transfer') => {
+    setOpKind(newOp);
+    if (newOp === 'in') setReason(STOCK_IN_REASONS[0]);
+    else if (newOp === 'out') setReason(STOCK_OUT_REASONS[0]);
+    else setReason('انتقال به انبار دیگر');
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentItem) {
+      toast('لطفاً یک کالا را انتخاب کنید', 'error');
+      return;
+    }
+    const q = num(qty);
+    if (q <= 0) {
+      toast('مقدار وارد شده باید بیشتر از صفر باشد', 'error');
+      return;
+    }
+
+    if (opKind === 'in') {
+      if (!targetWhId) {
+        toast('انتخاب انبار مقصد برای ورود کالا الزامی است', 'error');
+        return;
+      }
+      if (reason === 'خرید ثبت‌شده از مسیر معاملات') {
+        toast(
+          'خریدهای جدید باید از منوی «معاملات ← خرید» ثبت شوند تا طرف‌حساب و بهای تمام‌شده ثبت گردد',
+          'error',
+        );
+        return;
+      }
+      const tgtWh = s.warehouses.find((w) => w.id === targetWhId);
+      actions.adjustStock(
+        { [currentItem.name.trim()]: q },
+        {
+          date,
+          reason,
+          refType: 'manual',
+          refId,
+          warehouseId: targetWhId,
+          warehouseName: tgtWh?.name,
+          targetWarehouseId: targetWhId,
+          targetWarehouseName: tgtWh?.name,
+          batchNo: batchNo || undefined,
+          invoiceNo: refId || undefined,
+          note: note || undefined,
+        },
+      );
+      toast(
+        `ورود ${n(q)} ${unit} «${currentItem.name}» به ${tgtWh?.name || 'انبار مقصد'} ثبت شد`,
+      );
+      onClose();
+    } else if (opKind === 'out') {
+      if (!sourceWhId) {
+        toast('انتخاب انبار مبدأ برای خروج کالا الزامی است', 'error');
+        return;
+      }
+      const srcWh = s.warehouses.find((w) => w.id === sourceWhId);
+      if (q > sourceWhStock && totalItemStock < q) {
+        toast(`موجودی کالا کافی نیست (موجودی کل مزرعه: ${n(totalItemStock)} ${unit})`, 'error');
+        return;
+      }
+      actions.adjustStock(
+        { [currentItem.name.trim()]: -q },
+        {
+          date,
+          reason,
+          refType: 'manual',
+          refId,
+          warehouseId: sourceWhId,
+          warehouseName: srcWh?.name,
+          sourceWarehouseId: sourceWhId,
+          sourceWarehouseName: srcWh?.name,
+          batchNo: batchNo || undefined,
+          invoiceNo: refId || undefined,
+          note: note || undefined,
+        },
+      );
+      toast(
+        `خروج ${n(q)} ${unit} «${currentItem.name}» از ${srcWh?.name || 'انبار مبدأ'} ثبت شد`,
+      );
+      onClose();
+    } else if (opKind === 'transfer') {
+      if (!sourceWhId || !targetWhId) {
+        toast('انتخاب هر دو انبار مبدأ و مقصد برای انتقال الزامی است', 'error');
+        return;
+      }
+      if (sourceWhId === targetWhId) {
+        toast('انبار مبدأ و مقصد نمی‌توانند یکسان باشند', 'error');
+        return;
+      }
+      const srcWh = s.warehouses.find((w) => w.id === sourceWhId);
+      const tgtWh = s.warehouses.find((w) => w.id === targetWhId);
+      const ok = actions.transferStock(currentItem.id, sourceWhId, targetWhId, q, {
+        date,
+        batchNo: batchNo || undefined,
+        refId: refId || undefined,
+        note: note || undefined,
+      });
+      if (ok) {
+        toast(
+          `انتقال ${n(q)} ${unit} «${currentItem.name}» از ${srcWh?.name} به ${tgtWh?.name} با موفقیت ثبت گردید`,
+        );
+        onClose();
+      } else {
+        toast('خطا در انجام عملیات انتقال بین انبارها', 'error');
+      }
+    }
+  };
 
   return (
-    <FormModal
-      title="ورود / خروج انبار"
-      fields={fields}
-      initial={{
-        itemId: itemId || s.inventory[0]?.id || '',
-        kind: 'in',
-        date: today(),
-        qty: 0,
-        unitPrice: defaultItem ? num(defaultItem.pricePerKg) : 0,
-        cost: 0,
-        recordExpense: true,
-        reason: STOCK_REASONS[0],
-        flockId: '',
-        note: '',
-      }}
-      onClose={onClose}
-      extra={(v, setValue) => {
-        const item = s.inventory.find((i) => i.id === v.itemId);
-        const q = num(v.qty);
-        const p = num(v.unitPrice);
-        const calculated = q * p;
-        return (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '4px 0 10px', padding: '6px 10px', background: '#F8FAFC', borderRadius: 8, fontSize: 12 }}>
-            <span>
-              {item ? `موجودی فعلی «${item.name}»: ${n(item.qty)} ${item.unit}` : ''}
-            </span>
-            {q > 0 && p > 0 ? (
-              <button
-                type="button"
-                className="btn sm ghost"
-                style={{ fontSize: 11, padding: '2px 8px', color: '#6D28D9' }}
-                onClick={() => setValue('cost', calculated)}
+    <Modal title="ورود، خروج و انتقال انبار" onClose={onClose} size="md">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* انتخاب نوع عملیات */}
+        <div style={{ display: 'flex', gap: 8, background: '#F1F5F9', padding: 4, borderRadius: 10 }}>
+          <button
+            type="button"
+            className={`btn sm ${opKind === 'in' ? 'primary' : 'ghost'}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+            onClick={() => handleOpChange('in')}
+          >
+            <Icon name="upload" size={14} /> ورود به انبار
+          </button>
+          <button
+            type="button"
+            className={`btn sm ${opKind === 'out' ? 'primary' : 'ghost'}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+            onClick={() => handleOpChange('out')}
+          >
+            <Icon name="download" size={14} /> خروج از انبار
+          </button>
+          <button
+            type="button"
+            className={`btn sm ${opKind === 'transfer' ? 'primary' : 'ghost'}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+            onClick={() => handleOpChange('transfer')}
+          >
+            <Icon name="exchange" size={14} /> انتقال بین انبارها
+          </button>
+        </div>
+
+        {/* انتخاب کالا */}
+        <div className="field">
+          <label className="lbl">کالا *</label>
+          <select
+            className="input"
+            value={selectedItemId}
+            onChange={(e) => setSelectedItemId(e.target.value)}
+            required
+          >
+            {s.inventory.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name} ({i.code || 'بدون کد'}) — موجودی کل: {n(i.qty)} {i.unit}
+              </option>
+            ))}
+          </select>
+          {currentItem && (
+            <div style={{ fontSize: 11.5, color: '#64748B', marginTop: 4 }}>
+              موجودی کل مزرعه: <b>{n(totalItemStock)} {unit}</b>
+            </div>
+          )}
+        </div>
+
+        {/* انتخاب انبارها بر اساس نوع عملیات */}
+        <div className="grid grid-2" style={{ gap: 10 }}>
+          {(opKind === 'out' || opKind === 'transfer') && (
+            <div className="field">
+              <label className="lbl">انبار مبدأ (الزامی) *</label>
+              <select
+                className="input"
+                value={sourceWhId}
+                onChange={(e) => setSourceWhId(e.target.value)}
+                required
               >
-                محاسبه خودکار مبلغ: {money(calculated)} تومان
-              </button>
-            ) : null}
+                <option value="">-- انتخاب انبار مبدأ --</option>
+                {s.warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} ({w.code})
+                  </option>
+                ))}
+              </select>
+              {sourceWhId && (
+                <div style={{ fontSize: 11, color: '#475569', marginTop: 3 }}>
+                  موجودی در این انبار: <b>{n(sourceWhStock)} {unit}</b>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(opKind === 'in' || opKind === 'transfer') && (
+            <div className="field">
+              <label className="lbl">انبار مقصد (الزامی) *</label>
+              <select
+                className="input"
+                value={targetWhId}
+                onChange={(e) => setTargetWhId(e.target.value)}
+                required
+              >
+                <option value="">-- انتخاب انبار مقصد --</option>
+                {s.warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} ({w.code})
+                  </option>
+                ))}
+              </select>
+              {targetWhId && (
+                <div style={{ fontSize: 11, color: '#475569', marginTop: 3 }}>
+                  موجودی فعلی در مقصد: <b>{n(targetWhStock)} {unit}</b>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* علت حرکت */}
+        {opKind !== 'transfer' ? (
+          <div className="field">
+            <label className="lbl">علت {opKind === 'in' ? 'ورود' : 'خروج'} *</label>
+            <select
+              className="input"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            >
+              {(opKind === 'in' ? STOCK_IN_REASONS : STOCK_OUT_REASONS).map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
           </div>
-        );
-      }}
-      onSubmit={(v) => {
-        const item = s.inventory.find((i) => i.id === v.itemId);
-        if (!item) return false;
-        const q = num(v.qty);
-        if (v.kind === 'out' && q > num(item.qty)) {
-          toast(`موجودی کافی نیست (موجودی: ${n(item.qty)})`, 'error');
-          return false;
-        }
-        const effectiveCost = num(v.cost) > 0 ? num(v.cost) : num(v.qty) * num(v.unitPrice);
-        actions.adjustStock(
-          { [String(item.name).trim()]: v.kind === 'in' ? q : -q },
-          {
-            date: String(v.date),
-            reason: String(v.reason || 'سایر'),
-            refType: 'manual',
-            note: String(v.note ?? ''),
-          },
-        );
-        if (v.kind === 'in' && v.recordExpense !== false && effectiveCost > 0) {
-          actions.add('expenses', {
-            date: String(v.date),
-            category: INVENTORY_CAT_TO_EXPENSE[item.cat] || 'other',
-            sub: item.name,
-            title: `خرید ${n(q)} ${item.unit} ${item.name}`,
-            amount: effectiveCost,
-            qty: q,
-            unit: item.unit,
-            vendor: '',
-            paidBy: 'fund',
-            split: 'share',
-            flockId: String(v.flockId || ''),
-            note: 'ثبت خودکار از ورود انبار',
-          });
-        }
-        toast('تراکنش انبار ثبت شد');
-      }}
-    />
+        ) : (
+          <div className="field">
+            <label className="lbl">نوع عملیات</label>
+            <input className="input" value="انتقال بین انبارها" readOnly style={{ background: '#F8FAFC' }} />
+          </div>
+        )}
+
+        {/* هشدار تفکیک خرید از ورود انبار */}
+        {opKind === 'in' && reason === 'خرید ثبت‌شده از مسیر معاملات' && (
+          <div
+            style={{
+              background: '#FEF2F2',
+              border: '1px solid #FCA5A5',
+              borderRadius: 8,
+              padding: '10px 12px',
+              color: '#991B1B',
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            <b>⚠️ اصل تفکیک خرید از ورود دستی انبار:</b>
+            <div>
+              ثبت خرید کالا باید منحصراً از بخش <b>«معاملات ← خرید»</b> انجام گیرد تا سند مالی، بدهی فروشنده و بهای تمام‌شده ثبت شود.
+              با تأیید خرید در معاملات، موجودی کالا به‌صورت خودکار در انبار انتخابی افزایش می‌یابد. ثبت مجدد در این فرم، موجودی را دوبار اضافه خواهد کرد!
+            </div>
+            <button
+              type="button"
+              className="btn sm"
+              style={{ marginTop: 8, background: '#DC2626', color: '#FFF' }}
+              onClick={() => {
+                onClose();
+                open(<TransactionForm presetType="purchase" onClose={onClose} />);
+              }}
+            >
+              انتقال به ثبت خرید در بخش معاملات ➔
+            </button>
+          </div>
+        )}
+
+        {/* مقدار، تاریخ، بچ و سند مرجع */}
+        <div className="grid grid-2" style={{ gap: 10 }}>
+          <div className="field">
+            <label className="lbl">مقدار ({unit}) *</label>
+            <input
+              className="input"
+              type="number"
+              min="0.001"
+              step="any"
+              placeholder="۰"
+              value={qty || ''}
+              onChange={(e) => setQty(num(e.target.value))}
+              required
+            />
+          </div>
+          <div className="field">
+            <label className="lbl">تاریخ *</label>
+            <input
+              className="input"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-2" style={{ gap: 10 }}>
+          <div className="field">
+            <label className="lbl">شماره سند یا مرجع</label>
+            <input
+              className="input"
+              placeholder="مثلاً شماره حواله، فاکتور یا رسید"
+              value={refId}
+              onChange={(e) => setRefId(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="lbl">شماره محموله یا بچ</label>
+            <input
+              className="input"
+              placeholder="اختیاری — جهت ردیابی سری"
+              value={batchNo}
+              onChange={(e) => setBatchNo(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="field">
+          <label className="lbl">توضیحات تکمیلی</label>
+          <input
+            className="input"
+            placeholder="یادداشت و جزئیات بیشتر..."
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+          <button type="button" className="btn ghost" onClick={onClose}>
+            انصراف
+          </button>
+          <button type="submit" className="btn primary">
+            ثبت {opKind === 'in' ? 'ورود به انبار' : opKind === 'out' ? 'خروج از انبار' : 'انتقال بین انبارها'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

@@ -9,7 +9,7 @@
 import { useSyncExternalStore } from 'react';
 import * as J from '../lib/jalali';
 import { setFaDigits } from '../lib/jalali';
-import { blank, DEFAULT_PRODUCTS, seed, uid } from './seed';
+import { blank, DEFAULT_PRODUCTS, DEFAULT_WAREHOUSES, seed, uid } from './seed';
 import { CAT_MAP, GOODS_CATS } from './categories';
 import {
   COLLECTIONS,
@@ -30,6 +30,7 @@ import type {
   ExpenseFilter,
   FlockStats,
   Formula,
+  InventoryItem,
   Person,
   Product,
   Settlement,
@@ -119,6 +120,10 @@ function normalize(s: AppState): AppState {
     active: i.active !== false,
     note: i.note || '',
     expiry: i.expiry || '',
+    warehouseQuantities:
+      i.warehouseQuantities && typeof i.warehouseQuantities === 'object'
+        ? i.warehouseQuantities
+        : {},
   }));
   next.transactions = (next.transactions || []).map((t) => ({ ...t, locked: !!t.locked }));
   next.payments = (next.payments || []).map((p) => ({ ...p, locked: !!p.locked }));
@@ -143,7 +148,15 @@ function normalize(s: AppState): AppState {
   next.persons = next.persons || [];
   next.transactions = next.transactions || [];
   next.payments = next.payments || [];
-  next.stockMoves = next.stockMoves || [];
+  next.stockMoves = (next.stockMoves || []).map((m) => ({
+    ...m,
+    warehouseId: m.warehouseId || '',
+    warehouseName: m.warehouseName || '',
+    sourceWarehouseId: m.sourceWarehouseId || '',
+    targetWarehouseId: m.targetWarehouseId || '',
+    batchNo: m.batchNo || '',
+    invoiceNo: m.invoiceNo || '',
+  }));
   next.products = (next.products || []).map((p) => ({
     ...p,
     code: p.code || '',
@@ -170,6 +183,19 @@ function normalize(s: AppState): AppState {
     readyDate: J.norm(h.readyDate) || h.readyDate || '',
     notes: h.notes || '',
   }));
+  if (!next.warehouses || next.warehouses.length === 0) {
+    next.warehouses = DEFAULT_WAREHOUSES.map((w, idx) => ({
+      id: `wh_auto_${idx + 1}`,
+      createdAt: Date.now() + idx,
+      code: w.code,
+      name: w.name,
+      type: w.type,
+      manager: w.manager,
+      temperature: w.temperature,
+      active: w.active,
+      notes: w.notes,
+    }));
+  }
   next.warehouses = (next.warehouses || []).map((w) => ({
     ...w,
     code: w.code || '',
@@ -492,20 +518,44 @@ export const actions = {
 
   /**
    * تغییر موجودی انبار بر اساس نام کالا (مثبت = ورود، منفی = خروج)
-   * هر تغییر یک سطر در دفتر حرکات انبار (کاردکس) ثبت می‌کند.
+   * هر تغییر یک سطر در دفتر حرکات انبار (کاردکس) ثبت می‌کند و موجودی انبار مشخص‌شده را اصلاح می‌کند.
    */
   adjustStock(
     delta: Record<string, number>,
     meta?: {
       date?: string;
       reason?: string;
-      refType?: 'manual' | 'transaction' | 'adjust';
+      refType?: 'manual' | 'transaction' | 'adjust' | 'transfer' | 'consumption' | 'production';
       refId?: string;
       note?: string;
+      warehouseId?: string;
+      warehouseName?: string;
+      sourceWarehouseId?: string;
+      sourceWarehouseName?: string;
+      targetWarehouseId?: string;
+      targetWarehouseName?: string;
+      batchNo?: string;
+      invoiceNo?: string;
+      unitPrice?: number;
+      totalCost?: number;
+      costOfGoods?: number;
     },
   ): void {
     const entries = Object.entries(delta).filter(([, v]) => Math.abs(v) > 0.0001);
     if (!entries.length) return;
+
+    let resolvedWhId = meta?.warehouseId;
+    let resolvedWhName = meta?.warehouseName;
+    if (!resolvedWhId && meta?.warehouseName) {
+      const found = state.warehouses.find((w) => w.name === meta.warehouseName);
+      if (found) {
+        resolvedWhId = found.id;
+        resolvedWhName = found.name;
+      }
+    } else if (resolvedWhId && !resolvedWhName) {
+      const found = state.warehouses.find((w) => w.id === resolvedWhId);
+      if (found) resolvedWhName = found.name;
+    }
 
     const moves: StockMove[] = [];
     const inventory = state.inventory.map((item) => {
@@ -513,7 +563,15 @@ export const actions = {
       if (!hit) return item;
       const before = num(item.qty);
       const after = Math.max(0, before + hit[1]);
-      if (after === before) return item;
+      if (after === before && hit[1] === 0) return item;
+
+      // به‌روزرسانی موجودی تفکیکی انبار
+      const whMap = { ...(item.warehouseQuantities || {}) };
+      if (resolvedWhId) {
+        const curWhQty = num(whMap[resolvedWhId] || 0);
+        whMap[resolvedWhId] = Math.max(0, curWhQty + hit[1]);
+      }
+
       moves.push({
         id: uid(),
         createdAt: Date.now(),
@@ -529,8 +587,29 @@ export const actions = {
         refType: meta?.refType || 'manual',
         refId: meta?.refId || '',
         note: meta?.note || '',
+        warehouseId: resolvedWhId,
+        warehouseName: resolvedWhName,
+        sourceWarehouseId: meta?.sourceWarehouseId || (hit[1] < 0 ? resolvedWhId : undefined),
+        sourceWarehouseName: meta?.sourceWarehouseName || (hit[1] < 0 ? resolvedWhName : undefined),
+        targetWarehouseId: meta?.targetWarehouseId || (hit[1] >= 0 ? resolvedWhId : undefined),
+        targetWarehouseName: meta?.targetWarehouseName || (hit[1] >= 0 ? resolvedWhName : undefined),
+        batchNo: meta?.batchNo,
+        invoiceNo: meta?.invoiceNo,
+        unitPrice: meta?.unitPrice,
+        totalCost: meta?.totalCost,
       });
-      return { ...item, qty: after };
+
+      const updated: InventoryItem = {
+        ...item,
+        qty: after,
+        warehouseQuantities: whMap,
+      };
+
+      if (meta?.costOfGoods && meta.costOfGoods > 0) {
+        updated.pricePerKg = num(meta.costOfGoods);
+      }
+
+      return updated;
     });
 
     if (!moves.length) return;
@@ -545,7 +624,12 @@ export const actions = {
     const inventory = state.inventory.map((it) => {
       if (it.id === move.itemId || it.name.trim() === move.itemName.trim()) {
         const newQty = Math.max(0, num(it.qty) + reverseDelta);
-        return { ...it, qty: newQty };
+        const whMap = { ...(it.warehouseQuantities || {}) };
+        if (move.warehouseId) {
+          const curWh = num(whMap[move.warehouseId] || 0);
+          whMap[move.warehouseId] = Math.max(0, curWh + reverseDelta);
+        }
+        return { ...it, qty: newQty, warehouseQuantities: whMap };
       }
       return it;
     });
@@ -562,6 +646,9 @@ export const actions = {
       kind?: 'in' | 'out';
       reason?: string;
       note?: string;
+      warehouseId?: string;
+      warehouseName?: string;
+      batchNo?: string;
     },
   ): void {
     const move = state.stockMoves.find((m) => m.id === moveId);
@@ -569,14 +656,20 @@ export const actions = {
 
     const oldEffective = move.kind === 'in' ? num(move.qty) : -num(move.qty);
     const newQty = patch.qty !== undefined ? num(patch.qty) : num(move.qty);
-    const newKind = patch.kind !== undefined ? patch.kind : move.kind;
+    const newKind = patch.kind !== undefined ? patch.kind : (move.kind === 'transfer' ? 'in' : move.kind);
     const newEffective = newKind === 'in' ? newQty : -newQty;
     const netDelta = newEffective - oldEffective;
 
+    const targetWhId = patch.warehouseId || move.warehouseId;
     const inventory = state.inventory.map((it) => {
       if (it.id === move.itemId || it.name.trim() === move.itemName.trim()) {
         const updatedQty = Math.max(0, num(it.qty) + netDelta);
-        return { ...it, qty: updatedQty };
+        const whMap = { ...(it.warehouseQuantities || {}) };
+        if (targetWhId) {
+          const curWh = num(whMap[targetWhId] || 0);
+          whMap[targetWhId] = Math.max(0, curWh + netDelta);
+        }
+        return { ...it, qty: updatedQty, warehouseQuantities: whMap };
       }
       return it;
     });
@@ -587,9 +680,12 @@ export const actions = {
         ...m,
         date: patch.date ?? m.date,
         qty: newQty,
-        kind: newKind,
+        kind: newKind as any,
         reason: patch.reason ?? m.reason,
         note: patch.note ?? m.note,
+        warehouseId: targetWhId,
+        warehouseName: patch.warehouseName ?? m.warehouseName,
+        batchNo: patch.batchNo ?? m.batchNo,
         after: Math.max(0, num(m.before) + newEffective),
       };
     });
@@ -597,8 +693,102 @@ export const actions = {
     commit({ ...state, inventory, stockMoves });
   },
 
-  addInitialStockMove(item: { id?: string; name: string; unit: string; qty: number; code?: string }, date: string, note?: string): void {
+  /** انتقال کالا بین دو انبار مستقل بدون تغییر موجودی کل مزرعه */
+  transferStock(
+    itemId: string,
+    sourceWarehouseId: string,
+    targetWarehouseId: string,
+    qty: number,
+    meta?: {
+      date?: string;
+      batchNo?: string;
+      refId?: string;
+      note?: string;
+    },
+  ): boolean {
+    const q = num(qty);
+    if (q <= 0 || sourceWarehouseId === targetWarehouseId) return false;
+    const item = state.inventory.find((i) => i.id === itemId);
+    if (!item) return false;
+
+    const srcWh = state.warehouses.find((w) => w.id === sourceWarehouseId);
+    const tgtWh = state.warehouses.find((w) => w.id === targetWarehouseId);
+    const srcName = srcWh ? srcWh.name : 'انبار مبدأ';
+    const tgtName = tgtWh ? tgtWh.name : 'انبار مقصد';
+
+    const whMap = { ...(item.warehouseQuantities || {}) };
+    const beforeSource = num(whMap[sourceWarehouseId] || 0);
+    const afterSource = Math.max(0, beforeSource - q);
+    const beforeTarget = num(whMap[targetWarehouseId] || 0);
+    const afterTarget = beforeTarget + q;
+
+    whMap[sourceWarehouseId] = afterSource;
+    whMap[targetWarehouseId] = afterTarget;
+
+    const moveOut: StockMove = {
+      id: uid(),
+      createdAt: Date.now(),
+      date: meta?.date || J.today(),
+      itemId: item.id,
+      itemName: item.name,
+      unit: item.unit,
+      kind: 'out',
+      qty: q,
+      before: beforeSource,
+      after: afterSource,
+      reason: 'انتقال به انبار دیگر',
+      refType: 'transfer',
+      refId: meta?.refId || '',
+      note: meta?.note ? `${meta.note} (به ${tgtName})` : `انتقال به ${tgtName}`,
+      warehouseId: sourceWarehouseId,
+      warehouseName: srcName,
+      sourceWarehouseId,
+      sourceWarehouseName: srcName,
+      targetWarehouseId,
+      targetWarehouseName: tgtName,
+      batchNo: meta?.batchNo,
+    };
+
+    const moveIn: StockMove = {
+      id: uid(),
+      createdAt: Date.now() + 1,
+      date: meta?.date || J.today(),
+      itemId: item.id,
+      itemName: item.name,
+      unit: item.unit,
+      kind: 'in',
+      qty: q,
+      before: beforeTarget,
+      after: afterTarget,
+      reason: 'دریافت از انبار دیگر',
+      refType: 'transfer',
+      refId: meta?.refId || '',
+      note: meta?.note ? `${meta.note} (از ${srcName})` : `دریافت از ${srcName}`,
+      warehouseId: targetWarehouseId,
+      warehouseName: tgtName,
+      sourceWarehouseId,
+      sourceWarehouseName: srcName,
+      targetWarehouseId,
+      targetWarehouseName: tgtName,
+      batchNo: meta?.batchNo,
+    };
+
+    const inventory = state.inventory.map((it) =>
+      it.id === item.id ? { ...it, warehouseQuantities: whMap } : it,
+    );
+
+    commit({ ...state, inventory, stockMoves: [moveIn, moveOut, ...state.stockMoves] });
+    return true;
+  },
+
+  addInitialStockMove(
+    item: { id?: string; name: string; unit: string; qty: number; code?: string; warehouseQuantities?: Record<string, number> },
+    date: string,
+    note?: string,
+    warehouseId?: string,
+  ): void {
     if (num(item.qty) <= 0) return;
+    const wh = warehouseId ? state.warehouses.find((w) => w.id === warehouseId) : undefined;
     const move: StockMove = {
       id: uid(),
       createdAt: Date.now(),
@@ -610,10 +800,14 @@ export const actions = {
       qty: num(item.qty),
       before: 0,
       after: num(item.qty),
-      reason: 'موجودی اولیه کالا',
+      reason: 'موجودی اولیه',
       refType: 'manual',
       refId: item.code || '',
       note: note || 'ثبت همزمان با تعریف اولیه کالا در انبار',
+      warehouseId: warehouseId || undefined,
+      warehouseName: wh ? wh.name : undefined,
+      targetWarehouseId: warehouseId || undefined,
+      targetWarehouseName: wh ? wh.name : undefined,
     };
     commit({ ...state, stockMoves: [move, ...state.stockMoves] });
   },
@@ -1482,10 +1676,40 @@ export function flockSharePercents(s: AppState, flockId: string): Record<string,
   return out;
 }
 
-/** حرکات یک کالا، جدیدترین اول */
-export function stockMovesFor(s: AppState, itemId: string): StockMove[] {
+/** دریافت موجودی کالا در یک انبار مشخص */
+export function itemWarehouseQty(item: InventoryItem, warehouseId: string): number {
+  if (item.warehouseQuantities && item.warehouseQuantities[warehouseId] !== undefined) {
+    return num(item.warehouseQuantities[warehouseId]);
+  }
+  return 0;
+}
+
+/** حرکات یک کالا، جدیدترین اول (با امکان فیلتر اختیاری بر اساس انبار) */
+export function stockMovesFor(s: AppState, itemId: string, warehouseId?: string): StockMove[] {
   return s.stockMoves
-    .filter((m) => m.itemId === itemId)
+    .filter((m) => {
+      if (m.itemId !== itemId) return false;
+      if (warehouseId && warehouseId !== 'all') {
+        return (
+          m.warehouseId === warehouseId ||
+          m.sourceWarehouseId === warehouseId ||
+          m.targetWarehouseId === warehouseId
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => J.jdn(b.date) - J.jdn(a.date) || (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+/** حرکات یک انبار مشخص، جدیدترین اول */
+export function warehouseStockMoves(s: AppState, warehouseId: string): StockMove[] {
+  return s.stockMoves
+    .filter(
+      (m) =>
+        m.warehouseId === warehouseId ||
+        m.sourceWarehouseId === warehouseId ||
+        m.targetWarehouseId === warehouseId,
+    )
     .sort((a, b) => J.jdn(b.date) - J.jdn(a.date) || (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 

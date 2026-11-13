@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react';
 import { Modal, useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
 import { Empty, PageHead, SectionHead, Stat } from '../components/ui';
-import { actions, num, stockMovesFor, useApp } from '../data/store';
+import { actions, num, stockMovesFor, itemWarehouseQty, useApp } from '../data/store';
+import type { InventoryItem } from '../data/types';
 import { format, today } from '../lib/jalali';
 import { money, n, short } from '../lib/format';
 import { InventoryItemForm, InventoryMoveForm, WarehouseForm, WAREHOUSE_TYPE_LABELS, TradeLotForm, LotSaleForm } from '../forms';
@@ -23,7 +24,7 @@ function EditMoveModal({
   const { toast } = useUI();
   const [date, setDate] = useState(move.date);
   const [qty, setQty] = useState(move.qty);
-  const [kind, setKind] = useState<'in' | 'out'>(move.kind);
+  const [kind, setKind] = useState<'in' | 'out'>(move.kind === 'transfer' ? 'in' : move.kind);
   const [reason, setReason] = useState(move.reason || 'سایر');
   const [note, setNote] = useState(move.note || '');
 
@@ -101,6 +102,308 @@ function EditMoveModal({
   );
 }
 
+function CardexModal({
+  item,
+  onClose,
+  onEditMove,
+  onDeleteMove,
+}: {
+  item: InventoryItem;
+  onClose: () => void;
+  onEditMove: (m: StockMove) => void;
+  onDeleteMove: (m: StockMove) => void;
+}) {
+  const s = useApp();
+  const [selectedWh, setSelectedWh] = useState<string>('all');
+
+  const moves = useMemo(
+    () => stockMovesFor(s, item.id, selectedWh),
+    [s, item.id, selectedWh],
+  );
+
+  const currentStock = useMemo(() => {
+    if (selectedWh === 'all') return num(item.qty);
+    return num(item.warehouseQuantities?.[selectedWh] || 0);
+  }, [item, selectedWh]);
+
+  const stats = useMemo(() => {
+    const purchaseIn = moves
+      .filter((m) => m.kind === 'in' && (m.refType === 'transaction' || m.reason.includes('خرید')))
+      .reduce((a, m) => a + num(m.qty), 0);
+    const nonPurchaseIn = moves
+      .filter(
+        (m) =>
+          m.kind === 'in' &&
+          m.refType !== 'transaction' &&
+          !m.reason.includes('خرید') &&
+          m.reason !== 'دریافت از انبار دیگر',
+      )
+      .reduce((a, m) => a + num(m.qty), 0);
+    const consumptionOut = moves
+      .filter(
+        (m) =>
+          m.kind === 'out' &&
+          (m.reason.includes('مصرف') || m.refType === 'consumption'),
+      )
+      .reduce((a, m) => a + num(m.qty), 0);
+    const salesOut = moves
+      .filter(
+        (m) =>
+          m.kind === 'out' &&
+          (m.reason.includes('فروش') || (m.refType === 'transaction' && !m.reason.includes('خرید'))),
+      )
+      .reduce((a, m) => a + num(m.qty), 0);
+    const transfers = moves
+      .filter(
+        (m) =>
+          m.refType === 'transfer' ||
+          m.reason.includes('انتقال') ||
+          m.reason.includes('دریافت'),
+      )
+      .reduce((a, m) => a + num(m.qty), 0);
+
+    return { purchaseIn, nonPurchaseIn, consumptionOut, salesOut, transfers };
+  }, [moves]);
+
+  return (
+    <Modal
+      title={`کاردکس تفصیلی کالا — ${item.name}`}
+      onClose={onClose}
+      size="lg"
+      footer={
+        <button className="btn primary" type="button" onClick={onClose}>
+          بستن
+        </button>
+      }
+    >
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <label className="lbl" style={{ marginBottom: 4 }}>
+            فیلتر کاردکس بر اساس انبار:
+          </label>
+          <select
+            className="input"
+            value={selectedWh}
+            onChange={(e) => setSelectedWh(e.target.value)}
+          >
+            <option value="all">🏢 کل انبارهای مزرعه (مجموع)</option>
+            {s.warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name} ({w.code})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div
+            className="card"
+            style={{ padding: '6px 12px', background: '#F8FAFC', textAlign: 'center' }}
+          >
+            <span style={{ fontSize: 11, color: '#64748B' }}>موجودی فعلی:</span>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A' }}>
+              {n(currentStock)} {item.unit}
+            </div>
+          </div>
+          <div
+            className="card"
+            style={{ padding: '6px 12px', background: '#F8FAFC', textAlign: 'center' }}
+          >
+            <span style={{ fontSize: 11, color: '#64748B' }}>کد کالا:</span>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{item.code || '—'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* خلاصه آماری تفکیک ورودی و خروجی کالا */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+          gap: 8,
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            background: '#F0FDF4',
+            border: '1px solid #BBF7D0',
+            borderRadius: 8,
+            padding: '6px 10px',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#166534' }}>📥 ورودی خرید</div>
+          <b style={{ fontSize: 13, color: '#15803D' }}>
+            +{n(stats.purchaseIn)} {item.unit}
+          </b>
+        </div>
+        <div
+          style={{
+            background: '#F0FDF4',
+            border: '1px solid #BBF7D0',
+            borderRadius: 8,
+            padding: '6px 10px',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#166534' }}>✨ ورودی غیرخرید</div>
+          <b style={{ fontSize: 13, color: '#15803D' }}>
+            +{n(stats.nonPurchaseIn)} {item.unit}
+          </b>
+        </div>
+        <div
+          style={{
+            background: '#FEF2F2',
+            border: '1px solid #FECACA',
+            borderRadius: 8,
+            padding: '6px 10px',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#991B1B' }}>🌾 خروجی مصرف</div>
+          <b style={{ fontSize: 13, color: '#B91C1C' }}>
+            −{n(stats.consumptionOut)} {item.unit}
+          </b>
+        </div>
+        <div
+          style={{
+            background: '#FEF2F2',
+            border: '1px solid #FECACA',
+            borderRadius: 8,
+            padding: '6px 10px',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#991B1B' }}>💰 خروجی فروش</div>
+          <b style={{ fontSize: 13, color: '#B91C1C' }}>
+            −{n(stats.salesOut)} {item.unit}
+          </b>
+        </div>
+        <div
+          style={{
+            background: '#EFF6FF',
+            border: '1px solid #BFDBFE',
+            borderRadius: 8,
+            padding: '6px 10px',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#1E40AF' }}>🔄 انتقال انبارها</div>
+          <b style={{ fontSize: 13, color: '#1D4ED8' }}>
+            {n(stats.transfers)} {item.unit}
+          </b>
+        </div>
+      </div>
+
+      {moves.length ? (
+        <div className="tbl-wrap" style={{ maxHeight: 380, overflowY: 'auto' }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>تاریخ</th>
+                <th>عملیات</th>
+                <th>انبار</th>
+                <th>مقدار</th>
+                <th>مانده</th>
+                <th>علت / سند</th>
+                <th>شماره بچ</th>
+                <th style={{ width: 64 }}>عملیات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moves.map((m) => {
+                const whDisplayName =
+                  m.warehouseName ||
+                  (m.warehouseId
+                    ? s.warehouses.find((w) => w.id === m.warehouseId)?.name
+                    : 'عمومی');
+                return (
+                  <tr key={m.id}>
+                    <td>{format(m.date, 'short')}</td>
+                    <td>
+                      <span
+                        className={
+                          'badge ' +
+                          (m.refType === 'transfer'
+                            ? 'blue'
+                            : m.kind === 'in'
+                            ? 'green'
+                            : 'red')
+                        }
+                      >
+                        {m.refType === 'transfer'
+                          ? m.kind === 'in'
+                            ? 'دریافت انتقال'
+                            : 'ارسال انتقال'
+                          : m.kind === 'in'
+                          ? 'ورود'
+                          : 'خروج'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: 11.5, fontWeight: 500 }}>{whDisplayName}</span>
+                    </td>
+                    <td className="num-cell">
+                      <b style={{ color: m.kind === 'in' ? '#16A34A' : '#DC2626' }}>
+                        {m.kind === 'in' ? '+' : '−'}
+                        {n(m.qty)}
+                      </b>{' '}
+                      <span style={{ fontSize: 11 }}>{m.unit}</span>
+                    </td>
+                    <td className="num-cell">
+                      {n(m.before)} → <b>{n(m.after)}</b>
+                    </td>
+                    <td>
+                      <div>{m.reason}</div>
+                      {m.refId && (
+                        <div style={{ fontSize: 11, color: '#64748B' }}>سند: {m.refId}</div>
+                      )}
+                      {m.note && (
+                        <div style={{ fontSize: 10.5, color: '#94A3B8' }}>{m.note}</div>
+                      )}
+                    </td>
+                    <td>
+                      <span style={{ fontSize: 11, color: '#475569' }}>
+                        {m.batchNo || '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        <button
+                          className="icon-btn sm"
+                          title="ویرایش"
+                          onClick={() => onEditMove(m)}
+                        >
+                          <Icon name="edit" size={12} />
+                        </button>
+                        <button
+                          className="icon-btn sm"
+                          title="حذف"
+                          onClick={() => onDeleteMove(m)}
+                        >
+                          <Icon name="trash" size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="hint" style={{ padding: '16px', textAlign: 'center' }}>
+          برای این کالا در انبار انتخاب‌شده، هنوز حرکتی ثبت نشده است.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export function Inventory() {
   const s = useApp();
   const ui = useUI();
@@ -108,6 +411,7 @@ export function Inventory() {
   const [traceId, setTraceId] = useState<string | null>(null);
   const [editingMove, setEditingMove] = useState<StockMove | null>(null);
   const [catFilter, setCatFilter] = useState<string>('all');
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
   const [q, setQ] = useState('');
 
   // پارت‌های بازرگانی گوشت منجمد و FEFO
@@ -211,7 +515,6 @@ export function Inventory() {
   const value = rawItems.reduce((a, i) => a + num(i.qty) * num(i.pricePerKg), 0);
 
   const traceItem = traceId ? s.inventory.find((i) => i.id === traceId) : null;
-  const traceMoves = traceItem ? stockMovesFor(s, traceItem.id) : [];
 
   const monthKey = today().slice(0, 7);
   const monthMoves = s.stockMoves.filter((m) => m.date.slice(0, 7) === monthKey);
@@ -341,7 +644,7 @@ export function Inventory() {
             </div>
           ) : null}
 
-          {/* فیلتر دسته و جستجو */}
+          {/* فیلتر دسته، انبار و جستجو */}
           <div className="card" style={{ padding: '10px 14px', marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               className="input"
@@ -363,6 +666,19 @@ export function Inventory() {
                 </option>
               ))}
             </select>
+            <select
+              className="input"
+              style={{ width: 190 }}
+              value={warehouseFilter}
+              onChange={(e) => setWarehouseFilter(e.target.value)}
+            >
+              <option value="all">🏢 همه انبارها (مجموع)</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name} ({w.code})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="card mt">
@@ -375,7 +691,7 @@ export function Inventory() {
                       <th>کد</th>
                       <th>کالا</th>
                       <th>دسته</th>
-                      <th>موجودی</th>
+                      <th>{warehouseFilter === 'all' ? 'موجودی کل' : 'موجودی در انبار انتخابی'}</th>
                       <th>حد هشدار</th>
                       <th>ارزش (تومان)</th>
                       <th>وضعیت</th>
@@ -394,7 +710,41 @@ export function Inventory() {
                           </td>
                           <td>{i.cat || '—'}</td>
                           <td className="num-cell">
-                            {n(i.qty)} {i.unit}
+                            {warehouseFilter === 'all' ? (
+                              <>
+                                <b>{n(i.qty)}</b> {i.unit}
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                                  {warehouses.map((w) => {
+                                    const whQ = num(i.warehouseQuantities?.[w.id] || 0);
+                                    if (whQ <= 0) return null;
+                                    return (
+                                      <span
+                                        key={w.id}
+                                        style={{
+                                          fontSize: 10,
+                                          background: '#F1F5F9',
+                                          padding: '1px 5px',
+                                          borderRadius: 4,
+                                          color: '#334155',
+                                        }}
+                                      >
+                                        {w.name}: <b>{n(whQ)}</b>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <b style={{ color: '#2563EB', fontSize: 13.5 }}>
+                                  {n(itemWarehouseQty(i, warehouseFilter))}
+                                </b>{' '}
+                                {i.unit}
+                                <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
+                                  مجموع کل مزرعه: {n(i.qty)} {i.unit}
+                                </div>
+                              </>
+                            )}
                           </td>
                           <td className="num-cell">{n(i.min)}</td>
                           <td className="num-cell">{money(num(i.qty) * num(i.pricePerKg))}</td>
@@ -450,6 +800,125 @@ export function Inventory() {
             ) : (
               <Empty title="کالایی یافت نشد" text="اولین کالا را با دکمه «کالای جدید» اضافه کنید" />
             )}
+          </div>
+
+          {/* گزارش جامع تفکیکی گردش و مانده انبارها (User Requirement 7) */}
+          <div className="card mt">
+            <SectionHead
+              title="گزارش جامع گردش و مانده انبارها"
+              sub="تفکیک ورودی‌های خرید، غیرخرید، مصرف، فروش، انتقالات بین انبارها و مانده نهایی"
+            />
+            {items.length ? (
+              <div className="tbl-wrap">
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>کالا</th>
+                      <th>موجودی تفکیکی در انبارها</th>
+                      <th>ورودی خرید</th>
+                      <th>ورودی غیرخرید</th>
+                      <th>خروجی مصرف</th>
+                      <th>خروجی فروش</th>
+                      <th>گردش انتقال</th>
+                      <th>مانده نهایی کل</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((i) => {
+                      const itemMoves = s.stockMoves.filter((m) => m.itemId === i.id);
+                      const purchaseIn = itemMoves
+                        .filter(
+                          (m) =>
+                            m.kind === 'in' &&
+                            (m.refType === 'transaction' || m.reason.includes('خرید')),
+                        )
+                        .reduce((a, m) => a + num(m.qty), 0);
+                      const nonPurchaseIn = itemMoves
+                        .filter(
+                          (m) =>
+                            m.kind === 'in' &&
+                            m.refType !== 'transaction' &&
+                            !m.reason.includes('خرید') &&
+                            m.reason !== 'دریافت از انبار دیگر',
+                        )
+                        .reduce((a, m) => a + num(m.qty), 0);
+                      const consumptionOut = itemMoves
+                        .filter(
+                          (m) =>
+                            m.kind === 'out' &&
+                            (m.reason.includes('مصرف') || m.refType === 'consumption'),
+                        )
+                        .reduce((a, m) => a + num(m.qty), 0);
+                      const salesOut = itemMoves
+                        .filter(
+                          (m) =>
+                            m.kind === 'out' &&
+                            (m.reason.includes('فروش') ||
+                              (m.refType === 'transaction' && !m.reason.includes('خرید'))),
+                        )
+                        .reduce((a, m) => a + num(m.qty), 0);
+                      const transfers = itemMoves
+                        .filter(
+                          (m) =>
+                            m.refType === 'transfer' ||
+                            m.reason.includes('انتقال') ||
+                            m.reason.includes('دریافت'),
+                        )
+                        .reduce((a, m) => a + num(m.qty), 0);
+
+                      return (
+                        <tr key={i.id}>
+                          <td>
+                            <b>{i.name}</b>
+                            <div style={{ fontSize: 10.5, color: '#64748B' }}>
+                              {i.code || i.cat}
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {warehouses.map((w) => {
+                                const whQ = num(i.warehouseQuantities?.[w.id] || 0);
+                                if (whQ <= 0) return null;
+                                return (
+                                  <div key={w.id} style={{ fontSize: 11 }}>
+                                    <span style={{ color: '#475569' }}>{w.name}:</span>{' '}
+                                    <b>{n(whQ)}</b> {i.unit}
+                                  </div>
+                                );
+                              })}
+                              {(!i.warehouseQuantities ||
+                                Object.values(i.warehouseQuantities).every((v) => num(v) <= 0)) && (
+                                <span style={{ fontSize: 11, color: '#94A3B8' }}>
+                                  ثبت‌نشده تفکیکی ({n(i.qty)} {i.unit} کل)
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="num-cell" style={{ color: '#16A34A', fontWeight: 600 }}>
+                            {purchaseIn > 0 ? `+${n(purchaseIn)}` : '۰'}
+                          </td>
+                          <td className="num-cell" style={{ color: '#0D9488', fontWeight: 600 }}>
+                            {nonPurchaseIn > 0 ? `+${n(nonPurchaseIn)}` : '۰'}
+                          </td>
+                          <td className="num-cell" style={{ color: '#DC2626', fontWeight: 600 }}>
+                            {consumptionOut > 0 ? `−${n(consumptionOut)}` : '۰'}
+                          </td>
+                          <td className="num-cell" style={{ color: '#EA580C', fontWeight: 600 }}>
+                            {salesOut > 0 ? `−${n(salesOut)}` : '۰'}
+                          </td>
+                          <td className="num-cell" style={{ color: '#2563EB', fontWeight: 600 }}>
+                            {transfers > 0 ? n(transfers) : '۰'}
+                          </td>
+                          <td className="num-cell">
+                            <b style={{ fontSize: 13 }}>{n(i.qty)}</b> {i.unit}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         </>
       )}
@@ -839,99 +1308,12 @@ export function Inventory() {
       )}
 
       {traceItem ? (
-        <Modal
-          title={`کاردکس کالا — ${traceItem.name}`}
+        <CardexModal
+          item={traceItem}
           onClose={() => setTraceId(null)}
-          footer={
-            <button className="btn primary" type="button" onClick={() => setTraceId(null)}>
-              بستن
-            </button>
-          }
-        >
-          <div className="kv">
-            <span>موجودی فعلی</span>
-            <b>
-              {n(traceItem.qty)} {traceItem.unit}
-            </b>
-          </div>
-          <div className="kv">
-            <span>کد کالا</span>
-            <b>{traceItem.code || '—'}</b>
-          </div>
-          <div className="kv">
-            <span>تعداد حرکات ثبت‌شده</span>
-            <b>{n(traceMoves.length)}</b>
-          </div>
-
-          <div className="sec-head" style={{ marginTop: 12 }}>
-            <div>
-              <h3>گردش کالا</h3>
-              <span className="sec-sub">جدیدترین اول</span>
-            </div>
-          </div>
-
-          {traceMoves.length ? (
-            <div className="tbl-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>تاریخ</th>
-                    <th>نوع</th>
-                    <th>مقدار</th>
-                    <th>موجودی</th>
-                    <th>دلیل</th>
-                    <th style={{ width: 64 }}>عملیات</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {traceMoves.map((m) => (
-                    <tr key={m.id}>
-                      <td>{format(m.date, 'short')}</td>
-                      <td>
-                        <span className={'badge ' + (m.kind === 'in' ? 'green' : 'red')}>
-                          {m.kind === 'in' ? 'ورود' : 'خروج'}
-                        </span>
-                      </td>
-                      <td className="num-cell">
-                        {n(m.qty)} {m.unit}
-                      </td>
-                      <td className="num-cell">
-                        {n(m.before)} → <b>{n(m.after)}</b>
-                      </td>
-                      <td>
-                        {m.reason}
-                        {m.refId ? <span className="hint"> · {m.refId}</span> : null}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 2 }}>
-                          <button
-                            className="icon-btn sm"
-                            title="ویرایش"
-                            onClick={() => setEditingMove(m)}
-                          >
-                            <Icon name="edit" size={12} />
-                          </button>
-                          <button
-                            className="icon-btn sm"
-                            title="حذف"
-                            onClick={() => deleteMove(m)}
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="hint" style={{ padding: '8px 2px' }}>
-              برای این کالا حرکتی ثبت نشده است. از دکمه «ورود / خروج» یا با ثبت معامله، کاردکس پر
-              می‌شود.
-            </div>
-          )}
-        </Modal>
+          onEditMove={(m) => setEditingMove(m)}
+          onDeleteMove={(m) => deleteMove(m)}
+        />
       ) : null}
 
       {editingMove ? (
