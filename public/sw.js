@@ -1,9 +1,16 @@
 /* سرویس‌ورکر مزرعه بوقلمون — کش دارایی‌های ثابت + پشتیبان آفلاین */
-const VERSION = 'v2.0.1';
+const VERSION = 'v2.0.2';
 const CACHE = 'turkey-farm-' + VERSION;
 const SCOPE = self.registration.scope;
 
-const PRECACHE = [SCOPE, SCOPE + 'index.html', SCOPE + 'manifest.webmanifest'];
+const PRECACHE = [
+  SCOPE,
+  SCOPE + 'index.html',
+  SCOPE + 'manifest.webmanifest',
+  SCOPE + 'icon-192.png',
+  SCOPE + 'icon-512.png',
+  SCOPE + 'apple-touch-icon.png',
+];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { detach, hydrate, resync, useSyncInfo } from '../data/store';
 import { useUI } from '../components/Modal';
 import { Icon } from '../components/Icon';
-import { InstallHelp } from '../components/InstallButton';
+import { InstallHelp, triggerInstallPrompt } from '../components/InstallButton';
 
 export async function signOut() {
   detach();
@@ -137,7 +137,7 @@ function AuthScreen() {
           <button
             type="button"
             className="btn sm ghost"
-            onClick={() => ui.open(<InstallHelp onClose={ui.close} />)}
+            onClick={() => triggerInstallPrompt(() => ui.open(<InstallHelp onClose={ui.close} />))}
           >
             <Icon name="download" size={15} /> نصب روی گوشی یا کامپیوتر
           </button>

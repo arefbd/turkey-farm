@@ -3,14 +3,47 @@ import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { Modal, useUI } from './Modal';
 
-interface BeforeInstallPromptEvent extends Event {
+export interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-const isStandalone = () =>
-  window.matchMedia('(display-mode: standalone)').matches ||
-  (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+let globalDeferredPrompt: BeforeInstallPromptEvent | null = null;
+const promptListeners = new Set<(p: BeforeInstallPromptEvent | null) => void>();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    globalDeferredPrompt = e as BeforeInstallPromptEvent;
+    promptListeners.forEach((fn) => fn(globalDeferredPrompt));
+  });
+
+  window.addEventListener('appinstalled', () => {
+    globalDeferredPrompt = null;
+    promptListeners.forEach((fn) => fn(null));
+  });
+}
+
+export async function triggerInstallPrompt(onFallback?: () => void): Promise<boolean> {
+  if (globalDeferredPrompt) {
+    try {
+      await globalDeferredPrompt.prompt();
+      await globalDeferredPrompt.userChoice;
+    } catch {
+      /* کاربر رد کرد یا خطا */
+    }
+    globalDeferredPrompt = null;
+    promptListeners.forEach((fn) => fn(null));
+    return true;
+  }
+  if (onFallback) onFallback();
+  return false;
+}
+
+export const isStandalone = () =>
+  typeof window !== 'undefined' &&
+  (window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true);
 
 const GUIDE: Array<{ icon: string; title: string; steps: string }> = [
   {
@@ -72,43 +105,16 @@ export function InstallHelp({ onClose }: { onClose: () => void }) {
 
 export function InstallButton() {
   const ui = useUI();
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
     if (isStandalone()) setInstalled(true);
-
-    const onPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => {
-      setInstalled(true);
-      setDeferred(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', onPrompt);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
   }, []);
 
   if (installed) return null;
 
   const handleClick = async () => {
-    if (deferred) {
-      await deferred.prompt();
-      try {
-        await deferred.userChoice;
-      } catch {
-        /* کاربر بست */
-      }
-      setDeferred(null);
-      return;
-    }
-    ui.open(<InstallHelp onClose={ui.close} />);
+    await triggerInstallPrompt(() => ui.open(<InstallHelp onClose={ui.close} />));
   };
 
   return (
