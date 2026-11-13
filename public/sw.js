@@ -1,5 +1,5 @@
-/* سرویس‌ورکر مزرعه بوقلمون — نسخه v2.0.3 - ضد کش و اسکرول لمسی */
-const VERSION = 'v2.0.3';
+/* سرویس‌ورکر مزرعه بوقلمون — نسخه v2.0.4 - پایدار و ضد خطا */
+const VERSION = 'v2.0.4';
 const CACHE = 'turkey-farm-' + VERSION;
 const SCOPE = self.registration.scope;
 
@@ -7,9 +7,6 @@ const PRECACHE = [
   SCOPE,
   SCOPE + 'index.html',
   SCOPE + 'manifest.webmanifest',
-  SCOPE + 'icon-192.png',
-  SCOPE + 'icon-512.png',
-  SCOPE + 'apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -17,7 +14,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(PRECACHE).catch(() => undefined)),
+      .then((cache) => cache.addAll(PRECACHE))
+      .catch(() => undefined),
   );
 });
 
@@ -37,16 +35,18 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // فقط همان مبدأ؛ Supabase و فونت CDN دست‌نخورده می‌مانند
+  // فقط درخواست‌های هم‌مبدأ
   if (url.origin !== self.location.origin) return;
 
-  // ناوبری: شبکه اول با جلوگیری از کش stale، در صورت آفلاین بودن از کش
+  // ناوبری اصلی صفحه: اول تلاش برای دریافت از شبکه، در صورت قطعی یا خطا بازگشت به کش
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req, { cache: 'no-cache' })
+      fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(SCOPE + 'index.html', copy));
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(SCOPE + 'index.html', copy)).catch(() => {});
+          }
           return res;
         })
         .catch(() => caches.match(SCOPE + 'index.html').then((hit) => hit || caches.match(SCOPE))),
@@ -54,16 +54,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // دارایی‌های هش‌دار: اول شبکه تا آخرین بیلد دریافت شود، سپس کش
+  // فایل‌های استاتیک و دارایی‌ها: اول کش، اگر نبود شبکه
   event.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok && res.type === 'basic') {
+    caches.match(req).then((hit) => {
+      if (hit) return hit;
+      return fetch(req).then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         }
         return res;
-      })
-      .catch(() => caches.match(req)),
+      });
+    }).catch(() => fetch(req)),
   );
 });
