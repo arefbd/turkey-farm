@@ -19,12 +19,11 @@ import {
   TASK_TYPES,
   UNITS,
 } from '../data/categories';
-import { today, diff, addDays } from '../lib/jalali';
+import { today, addDays } from '../lib/jalali';
 import { money, n } from '../lib/format';
 import type {
   Batch,
   Contribution,
-  DailyRecord,
   Deal,
   Expense,
   Flock,
@@ -467,92 +466,7 @@ export function SaleForm({ id, onClose }: { id?: string; onClose: () => void }) 
 }
 
 /* ------------------------------- ثبت روزانه ------------------------------ */
-export function DailyForm({
-  id,
-  flockId,
-  onClose,
-}: {
-  id?: string;
-  flockId?: string;
-  onClose: () => void;
-}) {
-  const s = useApp();
-  const { toast } = useUI();
-  const editing = id ? s.daily.find((d) => d.id === id) : null;
-
-  const initial: FormValues = editing
-    ? { ...editing }
-    : {
-        date: today(),
-        flockId: flockId || s.flocks.find((f) => f.status !== 'closed')?.id || '',
-        mortality: 0,
-        culled: 0,
-        tempC: '',
-        feedKg: '',
-        waterL: '',
-        avgWeightG: '',
-        note: '',
-      };
-
-  const fields: FieldDef[] = [
-    { name: 'date', label: 'تاریخ', type: 'date', required: true, col: 'half' },
-    {
-      name: 'flockId',
-      label: 'گله',
-      type: 'select',
-      required: true,
-      col: 'half',
-      options: s.flocks.map((f) => {
-        const st = flockStats(s, f.id);
-        const aliveText = st ? ` (موجودی زنده: ${n(st.alive)} قطعه)` : '';
-        return { value: f.id, label: `${f.name}${aliveText}` };
-      }),
-    },
-    { name: 'mortality', label: 'تلفات (قطعه)', type: 'number', col: 'third' },
-    { name: 'culled', label: 'حذفی (قطعه)', type: 'number', col: 'third' },
-    { name: 'tempC', label: 'دمای سالن (°C)', type: 'number', col: 'third' },
-    { name: 'feedKg', label: 'مصرف دان (کیلوگرم)', type: 'number', col: 'half' },
-    { name: 'waterL', label: 'مصرف آب (لیتر)', type: 'number', col: 'half' },
-    {
-      name: 'avgWeightG',
-      label: 'وزن میانگین نمونه (گرم)',
-      type: 'number',
-      col: 'half',
-      hint: 'در روزهای توزین ثبت شود',
-    },
-    { name: 'note', label: 'یادداشت', type: 'textarea', col: 'full' },
-  ];
-
-  return (
-    <FormModal
-      title={editing ? 'ویرایش ثبت روزانه' : 'ثبت روزانه گله'}
-      fields={fields}
-      initial={initial}
-      submitText={editing ? 'ذخیره' : 'ثبت'}
-      onClose={onClose}
-      onSubmit={(v) => {
-        const flock = s.flocks.find((f) => f.id === v.flockId);
-        const data: FormValues = {
-          ...v,
-          mortality: num(v.mortality),
-          culled: num(v.culled),
-          feedKg: num(v.feedKg),
-          waterL: num(v.waterL),
-          avgWeightG: num(v.avgWeightG),
-          tempC: num(v.tempC),
-          age: flock ? Math.max(0, diff(flock.startDate, String(v.date))) + num(flock.chickAge) : 0,
-        };
-        if (editing) {
-          actions.update('daily', editing.id, asPatch<DailyRecord>(data));
-          toast('رکورد ویرایش شد');
-        } else {
-          actions.add('daily', asNew<DailyRecord>(data));
-          toast('ثبت روزانه ذخیره شد');
-        }
-      }}
-    />
-  );
-}
+export { DailyForm } from './DailyForm';
 
 /* ------------------------------ واکسیناسیون ------------------------------ */
 export function VaccineForm({

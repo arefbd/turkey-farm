@@ -80,6 +80,25 @@ function normalize(s: AppState): AppState {
       return o;
     }) as never;
   }
+  next.daily = (next.daily || []).map((d) => ({
+    ...d,
+    mortality: num(d.mortality),
+    culled: num(d.culled),
+    feedKg: num(d.feedKg),
+    waterL: num(d.waterL),
+    avgWeightG: num(d.avgWeightG),
+    tempC: num(d.tempC),
+    tempMinC: d.tempMinC != null ? num(d.tempMinC) : undefined,
+    tempMaxC: d.tempMaxC != null ? num(d.tempMaxC) : undefined,
+    humidityPct: d.humidityPct != null ? num(d.humidityPct) : undefined,
+    lightHours: d.lightHours != null ? num(d.lightHours) : undefined,
+    feedItemId: d.feedItemId || '',
+    feedItemName: d.feedItemName || '',
+    feedWarehouseId: d.feedWarehouseId || '',
+    feedDeducted: !!d.feedDeducted,
+    treatment: d.treatment || '',
+    note: d.note || '',
+  }));
   next.flocks = (next.flocks || []).map((f) => ({
     ...f,
     chickAge: num(f.chickAge),
@@ -497,6 +516,64 @@ export const actions = {
       note: note || 'ثبت همزمان با تعریف اولیه کالا در انبار',
     };
     commit({ ...state, stockMoves: [move, ...state.stockMoves] });
+  },
+
+  /** ثبت یا ویرایش گزارش روزانه همراه با مدیریت کسر خودکار دان از انبار */
+  saveDailyRecord(record: Omit<DailyRecord, 'id' | 'createdAt'> & { id?: string }): void {
+    const existing = record.id ? state.daily.find((d) => d.id === record.id) : null;
+    const flock = flockById(state, record.flockId);
+    const flockName = flock ? flock.name : 'گله';
+    const recId = record.id || uid();
+
+    // ۱. اگر رکورد قبلی دان از انبار کسر کرده بود، مقدار قبلی را برمی‌گردانیم
+    if (existing && existing.feedDeducted && existing.feedItemId && num(existing.feedKg) > 0) {
+      const prevItem = state.inventory.find((i) => i.id === existing.feedItemId);
+      if (prevItem) {
+        actions.adjustStock({ [prevItem.name]: num(existing.feedKg) }, {
+          date: record.date,
+          reason: `اصلاح ثبت روزانه ${flockName} (برگشت دان قبلی)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+
+    // ۲. اگر کسر جدید فعال است، مقدار جدید را از انبار کسر می‌کنیم
+    if (record.feedDeducted && record.feedItemId && num(record.feedKg) > 0) {
+      const curItem = state.inventory.find((i) => i.id === record.feedItemId);
+      if (curItem) {
+        actions.adjustStock({ [curItem.name]: -num(record.feedKg) }, {
+          date: record.date,
+          reason: `مصرف روزانه دان ${flockName} (سن ${record.age} روزگی)`,
+          refType: 'manual',
+          refId: recId,
+        });
+      }
+    }
+
+    // ۳. ذخیره خود رکورد روزانه
+    if (existing) {
+      actions.update('daily', existing.id, record);
+    } else {
+      actions.add('daily', { ...record, id: recId });
+    }
+  },
+
+  /** حذف گزارش روزانه همراه با برگشت دان به انبار در صورت کسر قبلی */
+  removeDailyRecord(id: string): void {
+    const existing = state.daily.find((d) => d.id === id);
+    if (existing && existing.feedDeducted && existing.feedItemId && num(existing.feedKg) > 0) {
+      const item = state.inventory.find((i) => i.id === existing.feedItemId);
+      if (item) {
+        actions.adjustStock({ [item.name]: num(existing.feedKg) }, {
+          date: existing.date,
+          reason: `حذف ثبت روزانه گله (برگشت دان به انبار)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+    actions.remove('daily', id);
   },
 
   setSettings(patch: Partial<Settings>): void {
@@ -1174,6 +1251,14 @@ export function flockStats(s: AppState, id: string): FlockStats | null {
     profit: rev - exp,
     costPerKg: totalProducedKg > 0 ? exp / totalProducedKg : biomass > 0 ? exp / biomass : 0,
     feedPerBird: alive ? feed / alive : 0,
+    epef: (age > 0 && gainKg > 0 && feed > 0)
+      ? ((num(f.startCount) ? (alive / num(f.startCount)) * 100 : 0) * (lastW / 1000) * 100) / (age * (feed / gainKg))
+      : 0,
+    waterFeedRatio: feed > 0 ? water / feed : 0,
+    adgG: (age > 0 && lastW > ((num(s.settings.chickWeightG) || 60)))
+      ? (lastW - (num(s.settings.chickWeightG) || 60)) / age
+      : 0,
+    feedPerBirdDailyG: (alive > 0 && age > 0) ? (feed * 1000) / (alive * age) : 0,
   };
 }
 

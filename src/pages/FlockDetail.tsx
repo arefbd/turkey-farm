@@ -113,6 +113,14 @@ export function FlockDetail({ id }: { id: string }) {
           sub={st.weightDate ? 'توزین ' + format(st.weightDate, 'long') : 'ثبت نشده'}
         />
         <Stat icon="🔄" label="ضریب تبدیل FCR" value={n(st.fcr, 2)} sub={`دان ${n(st.feedKg)} کیلو`} />
+        <Stat icon="🏆" label="شاخص کارایی EPEF" value={n(st.epef, 0)} sub="استاندارد بهره‌وری جهانی" />
+        <Stat
+          icon="💧"
+          label="نسبت آب به دان"
+          value={n(st.waterFeedRatio, 2)}
+          unit="لیتر/کیلو"
+          sub={`آب ${n(st.waterL)} لیتر`}
+        />
         <Stat
           icon="🍗"
           label="فروش رفته"

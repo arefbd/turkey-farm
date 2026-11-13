@@ -153,6 +153,15 @@ export interface DailyRecord extends Base {
   waterL: number;
   avgWeightG: number;
   tempC: number;
+  tempMinC?: number;
+  tempMaxC?: number;
+  humidityPct?: number;
+  lightHours?: number;
+  feedItemId?: string;
+  feedItemName?: string;
+  feedWarehouseId?: string;
+  feedDeducted?: boolean;
+  treatment?: string;
   note: string;
 }
 
@@ -453,6 +462,14 @@ export interface FlockStats {
   profit: number;
   costPerKg: number;
   feedPerBird: number;
+  /** شاخص کارایی اروپایی (EPEF / EPI) */
+  epef: number;
+  /** نسبت مصرف آب به دان (لیتر به کیلوگرم) */
+  waterFeedRatio: number;
+  /** افزایش وزن روزانه میانگین (گرم در روز) */
+  adgG: number;
+  /** مصرف روزانه دان به ازای هر پرنده (گرم) */
+  feedPerBirdDailyG: number;
 }
 
 export interface SettlementRow {
