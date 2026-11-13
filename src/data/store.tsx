@@ -34,6 +34,8 @@ import type {
   Product,
   Settlement,
   SettlementRow,
+  SlaughterBatch,
+  SlaughterCut,
   StockMove,
   Settings,
   Totals,
@@ -190,6 +192,37 @@ function normalize(s: AppState): AppState {
       initialCapital: num(x.initialCapital),
     })),
     notes: u.notes || '',
+  }));
+  next.slaughterBatches = (next.slaughterBatches || []).map((sb) => ({
+    ...sb,
+    code: sb.code || '',
+    date: J.norm(sb.date) || sb.date || '',
+    flockId: sb.flockId || '',
+    hallId: sb.hallId || '',
+    dispatchBirds: num(sb.dispatchBirds),
+    originWeightKg: num(sb.originWeightKg),
+    destWeightKg: num(sb.destWeightKg),
+    doaCount: num(sb.doaCount),
+    transportShrinkKg: num(sb.transportShrinkKg),
+    transportShrinkPct: num(sb.transportShrinkPct),
+    slaughterBirds: num(sb.slaughterBirds),
+    carcassWeightKg: num(sb.carcassWeightKg),
+    dressingYieldPct: num(sb.dressingYieldPct),
+    slaughterFeePerBird: num(sb.slaughterFeePerBird),
+    transportCost: num(sb.transportCost),
+    packagingCost: num(sb.packagingCost),
+    totalLiveCost: num(sb.totalLiveCost),
+    totalSlaughterCost: num(sb.totalSlaughterCost),
+    cuts: (sb.cuts || []).map((c) => ({
+      name: String(c.name || '').trim(),
+      weightKg: num(c.weightKg),
+      marketPricePerKg: num(c.marketPricePerKg),
+      costPerKg: num(c.costPerKg),
+      totalCost: num(c.totalCost),
+    })),
+    targetWarehouseId: sb.targetWarehouseId || '',
+    stockUpdated: !!sb.stockUpdated,
+    notes: sb.notes || '',
   }));
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
@@ -660,6 +693,76 @@ export const actions = {
     actions.remove('batches', id);
   },
 
+  /** ثبت یا ویرایش بچ کشتارگاه و قطعه‌بندی با به‌روزرسانی موجودی گوشت */
+  saveSlaughterBatch(batch: Omit<SlaughterBatch, 'id' | 'createdAt'> & { id?: string }): void {
+    const existing = batch.id ? state.slaughterBatches.find((b) => b.id === batch.id) : null;
+    const batchId = batch.id || uid();
+
+    // ۱. اگر بچ قبلی موجودی قطعات را اضافه کرده بود، برگشت می‌زنیم
+    if (existing && existing.stockUpdated && existing.cuts) {
+      const revertDelta: Record<string, number> = {};
+      existing.cuts.forEach((c: SlaughterCut) => {
+        if (num(c.weightKg) > 0 && c.name) {
+          revertDelta[c.name] = (revertDelta[c.name] || 0) - num(c.weightKg);
+        }
+      });
+      if (Object.keys(revertDelta).length) {
+        actions.adjustStock(revertDelta, {
+          date: batch.date,
+          reason: `اصلاح بچ کشتار ${existing.code} (برگشت موجودی گوشت)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+
+    // ۲. اعمال موجودی جدید در صورت فعال بودن stockUpdated
+    if (batch.stockUpdated && batch.cuts) {
+      const delta: Record<string, number> = {};
+      batch.cuts.forEach((c: SlaughterCut) => {
+        if (num(c.weightKg) > 0 && c.name) {
+          delta[c.name] = (delta[c.name] || 0) + num(c.weightKg);
+        }
+      });
+      if (Object.keys(delta).length) {
+        actions.adjustStock(delta, {
+          date: batch.date,
+          reason: `استحصال کشتار و قطعه‌بندی ${batch.code}`,
+          refType: 'manual',
+          refId: batchId,
+        });
+      }
+    }
+
+    if (existing) {
+      actions.update('slaughterBatches', existing.id, batch);
+    } else {
+      actions.add('slaughterBatches', { ...batch, id: batchId } as any);
+    }
+  },
+
+  /** حذف بچ کشتارگاه با اصلاح موجودی انبار */
+  removeSlaughterBatch(id: string): void {
+    const existing = state.slaughterBatches.find((b) => b.id === id);
+    if (existing && existing.stockUpdated && existing.cuts) {
+      const revertDelta: Record<string, number> = {};
+      existing.cuts.forEach((c: SlaughterCut) => {
+        if (num(c.weightKg) > 0 && c.name) {
+          revertDelta[c.name] = (revertDelta[c.name] || 0) - num(c.weightKg);
+        }
+      });
+      if (Object.keys(revertDelta).length) {
+        actions.adjustStock(revertDelta, {
+          date: existing.date,
+          reason: `حذف بچ کشتار (کسر موجودی قطعات لاشه)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+    actions.remove('slaughterBatches', id);
+  },
+
   setSettings(patch: Partial<Settings>): void {
     commit({ ...state, settings: { ...state.settings, ...patch } });
   },
@@ -950,6 +1053,16 @@ export function soldForFlock(
     } else {
       weightKg += q;
       count += Math.round((q * 1000) / avgW);
+    }
+  });
+
+  // ۳. بررسی پرنده‌های ارسالی به کشتارگاه در جدول slaughterBatches
+  (s.slaughterBatches || []).forEach((sb) => {
+    if (sb.flockId !== flockId) return;
+    const dispatched = num(sb.dispatchBirds);
+    if (dispatched > 0) {
+      count += dispatched;
+      weightKg += num(sb.originWeightKg) || (dispatched * avgW) / 1000;
     }
   });
 

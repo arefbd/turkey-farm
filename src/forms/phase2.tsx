@@ -233,8 +233,10 @@ export const WAREHOUSE_TYPE_LABELS: Record<WarehouseType, { label: string; icon:
   hall_sub: { label: 'انبارک فرعی سالن (سیلو / اتاق دان سالن)', icon: '🛖' },
   medicine_vaccine: { label: 'انبار دارو، واکسن و مکمل (زنجیره سرد)', icon: '💉' },
   cold_storage: { label: 'سردخانه گوشت منجمد و لاشه', icon: '❄️' },
+  finished_goods: { label: 'انبار محصولات فرآوری‌شده و قطعات لاشه', icon: '🍗' },
   equipment: { label: 'انبار ملزومات، پوشال و قطعات', icon: '🔧' },
   waste: { label: 'انبار ضایعات و دورریز', icon: '🗑️' },
+  other: { label: 'سایر انبارها', icon: '🏬' },
 };
 
 export function WarehouseForm({ id, onClose }: { id?: string; onClose: () => void }) {

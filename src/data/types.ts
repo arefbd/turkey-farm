@@ -375,7 +375,9 @@ export type WarehouseType =
   | 'medicine_vaccine'
   | 'equipment'
   | 'cold_storage'
-  | 'waste';
+  | 'finished_goods'
+  | 'waste'
+  | 'other';
 
 export interface Warehouse extends Base {
   code: string;
@@ -437,6 +439,7 @@ export interface AppState {
   halls: Hall[];
   warehouses: Warehouse[];
   partnershipUnits: PartnershipUnit[];
+  slaughterBatches: SlaughterBatch[];
 }
 
 export type CollectionKey =
@@ -461,7 +464,45 @@ export type CollectionKey =
   | 'products'
   | 'halls'
   | 'warehouses'
-  | 'partnershipUnits';
+  | 'partnershipUnits'
+  | 'slaughterBatches';
+
+/* ------------------------ کشتارگاه و قطعه‌بندی لاشه ------------------------ */
+export interface SlaughterCut {
+  name: string;
+  weightKg: number;
+  marketPricePerKg?: number;
+  costPerKg?: number;
+  totalCost?: number;
+}
+
+export interface SlaughterBatch extends Base {
+  code: string;
+  date: string;
+  flockId: string;
+  hallId?: string;
+  driverName?: string;
+  truckPlate?: string;
+  shippingDocNo?: string;
+  dispatchBirds: number;
+  originWeightKg: number;
+  destWeightKg: number;
+  doaCount: number;
+  transportShrinkKg: number;
+  transportShrinkPct: number;
+  slaughterBirds: number;
+  carcassWeightKg: number;
+  dressingYieldPct: number;
+  slaughterFeePerBird?: number;
+  transportCost?: number;
+  packagingCost?: number;
+  totalLiveCost?: number;
+  totalSlaughterCost?: number;
+  cuts: SlaughterCut[];
+  targetWarehouseId?: string;
+  stockUpdated?: boolean;
+  notes?: string;
+}
 
 export interface FlockStats {
   flock: Flock;

@@ -160,6 +160,7 @@ export function blank(): AppState {
     halls: [],
     warehouses: [],
     partnershipUnits: [],
+    slaughterBatches: [],
   };
 }
 
