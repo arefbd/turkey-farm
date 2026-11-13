@@ -335,7 +335,7 @@ export function Reports() {
       />
 
       {/* تب‌های صفحه گزارش‌ها */}
-      <div className="no-print" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+      <div className="subnav-scroll no-print">
         <button
           type="button"
           className={`btn ${reportTab === 'pnl' ? 'primary' : ''}`}
@@ -394,7 +394,7 @@ export function Reports() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+        <div className="subnav-scroll" style={{ paddingBottom: 4, marginTop: 10 }}>
           <button
             type="button"
             className={`btn sm ${selectedFlockIds.length === 0 ? 'primary' : ''}`}

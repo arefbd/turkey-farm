@@ -156,7 +156,7 @@ export function Flocks() {
       />
 
       {/* تب‌های اصلی بالای صفحه */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div className="subnav-scroll">
         <button
           className={`btn ${mainTab === 'flocks' ? 'primary' : ''}`}
           onClick={() => setMainTab('flocks')}

@@ -183,7 +183,7 @@ export function Payments() {
       />
 
       {/* تب‌های خزانه‌داری */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div className="subnav-scroll">
         <button
           className={`btn ${mainTab === 'cash' ? 'primary' : ''}`}
           onClick={() => setMainTab('cash')}

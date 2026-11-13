@@ -182,7 +182,7 @@ export function Partners() {
       />
 
       {/* تب‌های بالای صفحه */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div className="subnav-scroll">
         <button
           className={`btn ${mainTab === 'settle' ? 'primary' : ''}`}
           onClick={() => setMainTab('settle')}

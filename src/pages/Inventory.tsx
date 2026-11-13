@@ -278,7 +278,7 @@ export function Inventory() {
       />
 
       {/* تب‌های ناوبری بالای صفحه انبار */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div className="subnav-scroll">
         <button
           className={`btn ${mainTab === 'items' ? 'primary' : ''}`}
           onClick={() => setMainTab('items')}
@@ -599,7 +599,7 @@ export function Inventory() {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="subnav-scroll" style={{ paddingBottom: 2, marginBottom: 0 }}>
               {(['all', 'active', 'sold_out', 'expired'] as const).map((filterKey) => {
                 const labels: Record<string, string> = {
                   all: `همه پارت‌ها (${tradeLots.length})`,

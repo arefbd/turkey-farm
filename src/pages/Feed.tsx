@@ -158,7 +158,7 @@ export function Feed() {
       />
 
       {/* تب‌های بالای صفحه */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <div className="subnav-scroll">
         <button
           className={`btn ${tab === 'formulas' ? 'primary' : ''}`}
           onClick={() => setTab('formulas')}

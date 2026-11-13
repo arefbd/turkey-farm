@@ -195,6 +195,11 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M12 9v4.5M12 17h.01" />
     </>
   ),
+  menu: (
+    <>
+      <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof PATHS;

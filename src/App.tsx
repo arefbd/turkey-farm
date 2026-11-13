@@ -1,5 +1,5 @@
 /** پوسته برنامه: سایدبار، تاپ‌بار، ناوبری پایین و مسیریابی hash */
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Icon, type IconName } from './components/Icon';
 import { Modal, useUI } from './components/Modal';
 import { InstallButton } from './components/InstallButton';
@@ -126,6 +126,7 @@ export function App() {
   const route = useRoute();
   const activeNav = route.name === 'flock' ? 'flocks' : route.name;
   const t = totals(s);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     document.title = `${TITLES[route.name] || 'مزرعه بوقلمون'} | ${s.settings.farmName}`;
@@ -247,9 +248,19 @@ export function App() {
 
         <div className="main">
           <header className="topbar">
-            <div className="topbar-title">
-              <b>{s.settings.farmName}</b>
-              <span>{format(today(), 'full')}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <button
+                type="button"
+                className="icon-btn mobile-menu-btn"
+                onClick={() => setMobileMenuOpen(true)}
+                title="منوی اصلی سامانه"
+              >
+                <Icon name="menu" size={19} />
+              </button>
+              <div className="topbar-title">
+                <b>{s.settings.farmName}</b>
+                <span>{format(today(), 'full')}</span>
+              </div>
             </div>
             <div className="topbar-actions">
               <InstallButton />
@@ -260,6 +271,7 @@ export function App() {
                 className="icon-btn no-print"
                 onClick={() => window.print()}
                 title="چاپ"
+                data-act="print"
               >
                 <Icon name="print" size={19} />
               </button>
@@ -321,15 +333,8 @@ export function App() {
           </a>
           <button
             className="bn-item"
-            onClick={() =>
-              ui.sheet({
-                title: 'همه بخش‌ها',
-                items: NAV.filter(
-                  (x) => ['dashboard', 'flocks', 'expenses'].indexOf(x.id) === -1,
-                ).map((x) => ({ act: x.id, label: x.label, icon: <Icon name={x.icon} size={18} /> })),
-                onPick: (id) => (window.location.hash = `#/${id}`),
-              })
-            }
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
           >
             <Icon name="dots" size={21} />
             <span>بیشتر</span>
@@ -339,6 +344,31 @@ export function App() {
           </button>
         </nav>
       </div>
+
+      {mobileMenuOpen && (
+        <Modal
+          title="همه بخش‌های سامانه"
+          size="sheet-modal"
+          onClose={() => setMobileMenuOpen(false)}
+        >
+          <div className="mobile-nav-grid">
+            {NAV.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={'mobile-nav-card' + (activeNav === item.id ? ' active' : '')}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  window.location.hash = `#/${item.id}`;
+                }}
+              >
+                <Icon name={item.icon} size={20} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
