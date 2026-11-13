@@ -162,6 +162,7 @@ export function blank(): AppState {
     partnershipUnits: [],
     slaughterBatches: [],
     tradeLots: [],
+    cheques: [],
   };
 }
 

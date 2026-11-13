@@ -83,7 +83,7 @@ export interface Transaction extends Base {
 
 /* --------------------------- دریافت و پرداخت --------------------------- */
 export type PaymentKind = 'in' | 'out';
-export type PaymentMethod = 'cash' | 'card' | 'transfer';
+export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'cheque';
 
 export interface PaymentDoc extends Base {
   code: string;
@@ -105,6 +105,40 @@ export interface PaymentDoc extends Base {
   transactionId: string;
   note: string;
   locked: boolean;
+  reconciled?: boolean;
+  reconciledDate?: string;
+}
+
+/* ------------------------------- چک‌های صیادی ------------------------------- */
+export type ChequeKind = 'in' | 'out'; // دریافتی یا پرداختی
+export type ChequeStatus = 'pending' | 'cleared' | 'bounced' | 'passed_on' | 'cancelled';
+
+export interface Cheque extends Base {
+  code: string;
+  sayadNo: string;
+  serialNo?: string;
+  bankName: string;
+  branchName?: string;
+  accountNo?: string;
+  drawerName?: string;
+  issueDate: string;
+  dueDate: string;
+  amount: number;
+  kind: ChequeKind;
+  personId?: string;
+  personName?: string;
+  accountId?: string;
+  status: ChequeStatus;
+  clearDate?: string;
+  destinationAccountId?: string;
+  passedToPersonId?: string;
+  passedToPersonName?: string;
+  passedDate?: string;
+  bounceReason?: string;
+  reconciled?: boolean;
+  reconciledDate?: string;
+  transactionId?: string;
+  notes?: string;
 }
 
 export interface Partner extends Base {
@@ -441,6 +475,7 @@ export interface AppState {
   partnershipUnits: PartnershipUnit[];
   slaughterBatches: SlaughterBatch[];
   tradeLots: TradeLot[];
+  cheques: Cheque[];
 }
 
 export type CollectionKey =
@@ -467,7 +502,8 @@ export type CollectionKey =
   | 'warehouses'
   | 'partnershipUnits'
   | 'slaughterBatches'
-  | 'tradeLots';
+  | 'tradeLots'
+  | 'cheques';
 
 /* ------------------------ پارت بازرگانی و تجارت گوشت منجمد (FEFO) ------------------------ */
 export type TradeLotStatus = 'active' | 'sold_out' | 'expired';

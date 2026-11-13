@@ -27,6 +27,7 @@ export const COLLECTIONS: CollectionKey[] = [
   'partnershipUnits',
   'slaughterBatches',
   'tradeLots',
+  'cheques',
 ];
 
 export interface RemoteRecord {

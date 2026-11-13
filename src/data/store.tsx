@@ -40,6 +40,9 @@ import type {
   TradeLot,
   TradeLotStatus,
   LotSaleRecord,
+  Cheque,
+  ChequeKind,
+  ChequeStatus,
   Settings,
   Totals,
   Transaction,
@@ -259,6 +262,34 @@ function normalize(s: AppState): AppState {
     status: (tl.status || 'active') as TradeLotStatus,
     stockUpdated: !!tl.stockUpdated,
     notes: tl.notes || '',
+  }));
+  next.cheques = (next.cheques || []).map((c) => ({
+    ...c,
+    code: c.code || '',
+    sayadNo: c.sayadNo || '',
+    serialNo: c.serialNo || '',
+    bankName: c.bankName || '',
+    branchName: c.branchName || '',
+    accountNo: c.accountNo || '',
+    drawerName: c.drawerName || '',
+    issueDate: J.norm(c.issueDate) || c.issueDate || '',
+    dueDate: J.norm(c.dueDate) || c.dueDate || '',
+    amount: num(c.amount),
+    kind: (c.kind || 'in') as ChequeKind,
+    personId: c.personId || '',
+    personName: c.personName || '',
+    accountId: c.accountId || '',
+    status: (c.status || 'pending') as ChequeStatus,
+    clearDate: c.clearDate ? J.norm(c.clearDate) || c.clearDate : '',
+    destinationAccountId: c.destinationAccountId || '',
+    passedToPersonId: c.passedToPersonId || '',
+    passedToPersonName: c.passedToPersonName || '',
+    passedDate: c.passedDate ? J.norm(c.passedDate) || c.passedDate : '',
+    bounceReason: c.bounceReason || '',
+    reconciled: !!c.reconciled,
+    reconciledDate: c.reconciledDate ? J.norm(c.reconciledDate) || c.reconciledDate : '',
+    transactionId: c.transactionId || '',
+    notes: c.notes || '',
   }));
   next.settings = { ...blank().settings, ...(next.settings || {}) };
   return next;
@@ -883,6 +914,88 @@ export const actions = {
       soldWeightKg: newSoldWeight,
       avgSellPricePerKg: avgSellPrice,
       status: isSoldOut ? 'sold_out' : lot.status,
+    });
+  },
+
+  /** ثبت یا ویرایش چک صیادی */
+  saveCheque(cheque: Omit<Cheque, 'id' | 'createdAt'> & { id?: string }): void {
+    const existing = cheque.id ? state.cheques.find((c) => c.id === cheque.id) : null;
+    const chqId = cheque.id || uid();
+
+    if (existing) {
+      actions.update('cheques', existing.id, cheque);
+    } else {
+      actions.add('cheques', { ...cheque, id: chqId } as any);
+    }
+  },
+
+  /** حذف چک */
+  removeCheque(id: string): void {
+    actions.remove('cheques', id);
+  },
+
+  /** وصول چک و واریز به حساب بانکی مقصد */
+  clearCheque(id: string, opts: { clearDate: string; destinationAccountId?: string }): void {
+    const chq = state.cheques.find((c) => c.id === id);
+    if (!chq) return;
+
+    actions.update('cheques', id, {
+      status: 'cleared',
+      clearDate: opts.clearDate || J.today(),
+      destinationAccountId: opts.destinationAccountId || chq.accountId,
+    });
+
+    // ثبت اتوماتیک سند پرداخت/دریافت بانکی در صورت انتخاب حساب
+    if (opts.destinationAccountId) {
+      actions.add('payments', {
+        code: `PAY-CHQ-${chq.code}`,
+        date: opts.clearDate || J.today(),
+        kind: chq.kind,
+        accountType: 'fund',
+        partnerId: '',
+        payerId: '',
+        ownerId: '',
+        personId: chq.personId || '',
+        accountId: opts.destinationAccountId,
+        amount: chq.amount,
+        method: 'cheque',
+        transactionId: chq.transactionId || '',
+        note: `وصول چک صیاد ${chq.sayadNo} (${chq.bankName} - سررسید: ${chq.dueDate})`,
+        locked: true,
+      } as any);
+    }
+  },
+
+  /** برگشت چک صیادی */
+  bounceCheque(id: string, opts: { reason?: string }): void {
+    actions.update('cheques', id, {
+      status: 'bounced',
+      bounceReason: opts.reason || 'کسری موجودی / واخواست',
+    });
+  },
+
+  /** خرج کردن چک دریافتی (انتقال به شخص ثالث) */
+  passCheque(id: string, opts: { passedToPersonId: string; passedToPersonName?: string; passedDate?: string }): void {
+    actions.update('cheques', id, {
+      status: 'passed_on',
+      passedToPersonId: opts.passedToPersonId,
+      passedToPersonName: opts.passedToPersonName || '',
+      passedDate: opts.passedDate || J.today(),
+    });
+  },
+
+  /** تطبیق یا لغو تطبیق در مغایرت‌گیری بانکی */
+  reconcileCheque(id: string, reconciled: boolean): void {
+    actions.update('cheques', id, {
+      reconciled,
+      reconciledDate: reconciled ? J.today() : undefined,
+    });
+  },
+
+  reconcilePayment(id: string, reconciled: boolean): void {
+    actions.update('payments', id, {
+      reconciled,
+      reconciledDate: reconciled ? J.today() : undefined,
     });
   },
 
@@ -1999,5 +2112,41 @@ export function lotProfitSummary(lot: TradeLot): {
     grossProfit,
     profitMarginPct: Math.round(profitMarginPct * 10) / 10,
     roiPct: Math.round(roiPct * 10) / 10,
+  };
+}
+
+/* ------------------ خزانه‌داری: راس‌گیری چک‌ها و فاکتورها ------------------ */
+
+/** محاسبه راس‌گیری زمانی چک‌ها (میانگین وزنی سررسید به روز و تاریخ موثر) */
+export function calculateRaas(
+  items: Array<{ amount: number; dueDate: string }>,
+  baseDate?: string,
+): {
+  totalAmount: number;
+  averageDays: number;
+  effectiveDueDate: string;
+} {
+  const validItems = items.filter((it) => num(it.amount) > 0 && it.dueDate);
+  const totalAmount = validItems.reduce((sum, it) => sum + num(it.amount), 0);
+  if (totalAmount <= 0 || validItems.length === 0) {
+    const todayStr = J.today();
+    return { totalAmount: 0, averageDays: 0, effectiveDueDate: baseDate || todayStr };
+  }
+
+  const bDate = baseDate || J.today();
+  let weightedDaysSum = 0;
+
+  validItems.forEach((it) => {
+    const daysFromBase = J.diff(bDate, it.dueDate);
+    weightedDaysSum += num(it.amount) * daysFromBase;
+  });
+
+  const averageDays = Math.round(weightedDaysSum / totalAmount);
+  const effectiveDueDate = J.addDays(bDate, averageDays);
+
+  return {
+    totalAmount,
+    averageDays,
+    effectiveDueDate,
   };
 }
