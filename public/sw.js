@@ -1,5 +1,5 @@
-/* سرویس‌ورکر مزرعه بوقلمون — کش دارایی‌های ثابت + پشتیبان آفلاین */
-const VERSION = 'v2.0.2';
+/* سرویس‌ورکر مزرعه بوقلمون — نسخه v2.0.3 - ضد کش و اسکرول لمسی */
+const VERSION = 'v2.0.3';
 const CACHE = 'turkey-farm-' + VERSION;
 const SCOPE = self.registration.scope;
 
@@ -40,10 +40,10 @@ self.addEventListener('fetch', (event) => {
   // فقط همان مبدأ؛ Supabase و فونت CDN دست‌نخورده می‌مانند
   if (url.origin !== self.location.origin) return;
 
-  // ناوبری: شبکه اول، در نبود شبکه از کش
+  // ناوبری: شبکه اول با جلوگیری از کش stale، در صورت آفلاین بودن از کش
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(SCOPE + 'index.html', copy));
@@ -54,18 +54,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // دارایی‌های هش‌دار Vite تغییرناپذیرند: کش اول
+  // دارایی‌های هش‌دار: اول شبکه تا آخرین بیلد دریافت شود، سپس کش
   event.respondWith(
-    caches.match(req).then(
-      (hit) =>
-        hit ||
-        fetch(req).then((res) => {
-          if (res.ok && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        }),
-    ),
+    fetch(req)
+      .then((res) => {
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req)),
   );
 });

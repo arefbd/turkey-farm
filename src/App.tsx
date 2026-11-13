@@ -367,6 +367,26 @@ export function App() {
               </button>
             ))}
           </div>
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)', textAlign: 'center' }}>
+            <button
+              type="button"
+              className="btn sm ghost"
+              style={{ fontSize: 12, color: 'var(--brand)', fontWeight: 600 }}
+              onClick={async () => {
+                if ('serviceWorker' in navigator) {
+                  const regs = await navigator.serviceWorker.getRegistrations();
+                  for (const r of regs) await r.unregister();
+                }
+                if ('caches' in window) {
+                  const ks = await caches.keys();
+                  for (const k of ks) await caches.delete(k);
+                }
+                window.location.reload();
+              }}
+            >
+              <Icon name="refresh" size={15} /> دریافت آخرین نسخه و پاکسازی حافظه پنهان
+            </button>
+          </div>
         </Modal>
       )}
     </>

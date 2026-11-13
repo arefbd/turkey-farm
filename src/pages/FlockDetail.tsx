@@ -149,10 +149,11 @@ export function FlockDetail({ id }: { id: string }) {
         </div>
       ) : null}
 
-      <div className="tabs mt">
+      <div className="tabs subnav-scroll mt">
         {TABS.map((x) => (
           <button
             key={x.id}
+            type="button"
             className={'tab' + (tab === x.id ? ' active' : '')}
             onClick={() => setTab(x.id)}
           >

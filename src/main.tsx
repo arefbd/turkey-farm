@@ -18,6 +18,24 @@ createRoot(root).render(
   </StrictMode>,
 );
 
+/* پاکسازی خودکار کش‌های قدیمی در هر بار راه‌اندازی نسخه جدید */
+if (typeof window !== 'undefined') {
+  const CURRENT_VER = 'v2.0.3';
+  const savedVer = localStorage.getItem('tf_app_version');
+  if (savedVer !== CURRENT_VER) {
+    localStorage.setItem('tf_app_version', CURRENT_VER);
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        keys.forEach((key) => {
+          if (!key.includes(CURRENT_VER)) {
+            caches.delete(key);
+          }
+        });
+      });
+    }
+  }
+}
+
 /* ثبت و به‌روزرسانی خودکار سرویس‌ورکر PWA */
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {

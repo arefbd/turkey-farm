@@ -133,13 +133,31 @@ function AuthScreen() {
           Supabase → Authentication → Users بسازید.
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 10 }}>
+        <div style={{ textAlign: 'center', marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <button
             type="button"
             className="btn sm ghost"
             onClick={() => triggerInstallPrompt(() => ui.open(<InstallHelp onClose={ui.close} />))}
           >
             <Icon name="download" size={15} /> نصب روی گوشی یا کامپیوتر
+          </button>
+          <button
+            type="button"
+            className="btn sm ghost"
+            style={{ fontSize: 11.5, color: 'var(--muted)' }}
+            onClick={async () => {
+              if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (const r of regs) await r.unregister();
+              }
+              if ('caches' in window) {
+                const ks = await caches.keys();
+                for (const k of ks) await caches.delete(k);
+              }
+              window.location.reload();
+            }}
+          >
+            <Icon name="refresh" size={14} /> تازه‌سازی و پاکسازی کش مرورگر
           </button>
         </div>
       </div>
