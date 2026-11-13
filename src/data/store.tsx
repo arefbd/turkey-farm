@@ -576,6 +576,90 @@ export const actions = {
     actions.remove('daily', id);
   },
 
+  /** ثبت یا ویرایش بچ تولید دان همراه با کسر مواد اولیه و افزودن خوراک ساخته‌شده به انبار */
+  saveBatch(batch: Omit<Batch, 'id' | 'createdAt'> & { id?: string }): void {
+    const existing = batch.id ? state.batches.find((b) => b.id === batch.id) : null;
+    const fm = state.formulas.find((f) => f.id === batch.formulaId);
+    const formulaName = fm ? fm.name : 'خوراک تولیدی';
+    const batchId = batch.id || uid();
+    const qty = num(batch.qtyKg);
+
+    // ۱. اگر بچ قبلی استوک را تغییر داده بود، معکوس می‌کنیم
+    if (existing && existing.stockDeducted && existing.formulaId) {
+      const prevFm = state.formulas.find((f) => f.id === existing.formulaId);
+      if (prevFm) {
+        const revertDelta: Record<string, number> = {};
+        (prevFm.items || []).forEach((it) => {
+          const itemKg = (num(it.percent) / 100) * num(existing.qtyKg);
+          const itemName = String(it.name || '').trim();
+          if (itemKg > 0 && itemName) {
+            revertDelta[itemName] = (revertDelta[itemName] || 0) + itemKg;
+          }
+        });
+        revertDelta[prevFm.name] = (revertDelta[prevFm.name] || 0) - num(existing.qtyKg);
+        actions.adjustStock(revertDelta, {
+          date: batch.date,
+          reason: `اصلاح بچ تولید ${existing.code || ''} (برگشت مواد اولیه)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+
+    // ۲. اعمال کسر جدید اگر stockDeducted فعال است
+    if (batch.stockDeducted && fm && qty > 0) {
+      const delta: Record<string, number> = {};
+      (fm.items || []).forEach((it) => {
+        const itemKg = (num(it.percent) / 100) * qty;
+        const itemName = String(it.name || '').trim();
+        if (itemKg > 0 && itemName) {
+          delta[itemName] = (delta[itemName] || 0) - itemKg;
+        }
+      });
+      delta[formulaName] = (delta[formulaName] || 0) + qty;
+
+      actions.adjustStock(delta, {
+        date: batch.date,
+        reason: `تولید خوراک ${formulaName} (بچ ${batch.code || ''})`,
+        refType: 'manual',
+        refId: batchId,
+      });
+    }
+
+    // ۳. ثبت یا ویرایش بچ
+    if (existing) {
+      actions.update('batches', existing.id, batch);
+    } else {
+      actions.add('batches', { ...batch, id: batchId });
+    }
+  },
+
+  /** حذف بچ تولید همراه با برگشت موجودی انبار */
+  removeBatch(id: string): void {
+    const existing = state.batches.find((b) => b.id === id);
+    if (existing && existing.stockDeducted && existing.formulaId) {
+      const fm = state.formulas.find((f) => f.id === existing.formulaId);
+      if (fm) {
+        const revertDelta: Record<string, number> = {};
+        (fm.items || []).forEach((it) => {
+          const itemKg = (num(it.percent) / 100) * num(existing.qtyKg);
+          const itemName = String(it.name || '').trim();
+          if (itemKg > 0 && itemName) {
+            revertDelta[itemName] = (revertDelta[itemName] || 0) + itemKg;
+          }
+        });
+        revertDelta[fm.name] = (revertDelta[fm.name] || 0) - num(existing.qtyKg);
+        actions.adjustStock(revertDelta, {
+          date: existing.date,
+          reason: `حذف بچ تولید (برگشت مواد اولیه به انبار)`,
+          refType: 'manual',
+          refId: existing.id,
+        });
+      }
+    }
+    actions.remove('batches', id);
+  },
+
   setSettings(patch: Partial<Settings>): void {
     commit({ ...state, settings: { ...state.settings, ...patch } });
   },
@@ -1562,19 +1646,24 @@ export function alerts(s: AppState): AlertItem[] {
 export function formulaCost(fm: Formula) {
   let cost = 0;
   let protein = 0;
+  let energy = 0;
   let pct = 0;
   (fm.items || []).forEach((it) => {
     const p = num(it.percent);
     pct += p;
     cost += (p / 100) * num(it.pricePerKg);
     protein += (p / 100) * num(it.protein);
+    energy += (p / 100) * num(it.energyKcal || 0);
   });
-  return { cost, protein, pct };
+  return { cost, protein, energy, pct };
 }
 
 export function batchCost(s: AppState, b: Batch): number {
+  if (b.totalCost && num(b.totalCost) > 0) return num(b.totalCost);
   const fm = s.formulas.find((f) => f.id === b.formulaId);
-  return fm ? formulaCost(fm).cost * num(b.qtyKg) : 0;
+  const rawCost = fm ? formulaCost(fm).cost * num(b.qtyKg) : 0;
+  const millingCost = num(b.millingCostPerKg) * num(b.qtyKg);
+  return rawCost + millingCost;
 }
 
 /* --------------------------- تسویه پیشنهادی --------------------------- */

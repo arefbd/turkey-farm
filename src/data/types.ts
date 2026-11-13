@@ -216,24 +216,46 @@ export interface Task extends Base {
   done: boolean;
 }
 
+export type FeedStage =
+  | 'pre_starter'
+  | 'starter'
+  | 'grower1'
+  | 'grower2'
+  | 'finisher'
+  | 'custom';
+
 export interface FormulaItem {
   name: string;
   percent: number;
   pricePerKg: number;
   protein: number;
+  energyKcal?: number;
 }
 
 export interface Formula extends Base {
+  code?: string;
   name: string;
+  stage?: FeedStage;
+  shareMode?: 'percent' | 'unit';
+  targetProtein?: number;
+  targetEnergy?: number;
   note: string;
   items: FormulaItem[];
 }
 
 export interface Batch extends Base {
+  code?: string;
   date: string;
   formulaId: string;
   qtyKg: number;
   flockId: string;
+  hallId?: string;
+  sourceWarehouseId?: string;
+  targetWarehouseId?: string;
+  millingCostPerKg?: number;
+  costPerKg?: number;
+  totalCost?: number;
+  stockDeducted?: boolean;
   note: string;
   expensed: boolean;
 }
