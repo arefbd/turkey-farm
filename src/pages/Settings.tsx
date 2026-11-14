@@ -256,6 +256,23 @@ export function Settings() {
 
       <div className="card mt">
         <SectionHead title="راهنمای سریع" sub="قابلیت‌های سامانه" />
+        <div style={{ marginBottom: 14 }}>
+          <a
+            href={import.meta.env.BASE_URL + 'docs/admin-manual.pdf'}
+            target="_blank"
+            rel="noreferrer"
+            className="btn block"
+            style={{
+              justifyContent: 'center',
+              background: 'linear-gradient(135deg, #FAF5FF, #F3E8FF)',
+              color: 'var(--brand)',
+              borderColor: '#E9D5FF',
+              fontWeight: 700,
+            }}
+          >
+            <Icon name="download" size={16} /> دانلود کتابچه راهنمای جامع مدیر سامانه (PDF)
+          </a>
+        </div>
         <div className="grid grid-2" style={{ gap: 10 }}>
           {guide.map(([icon, title, desc]) => (
             <div
