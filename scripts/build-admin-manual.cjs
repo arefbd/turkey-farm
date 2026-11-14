@@ -5,8 +5,9 @@ async function main() {
   const { default: puppeteer } = await import('puppeteer-core');
 
   const artifactPdfPath = 'C:\\Users\\ISATIS\\.gemini\\antigravity\\brain\\95cc7456-195d-42b5-b5b8-5c702b4fea77\\راهنمای_جامع_مدیر_سامانه_مزرعه_بوقلمون.pdf';
-  const publicPdfPath = path.join(__dirname, '..', 'public', 'راهنمای_جامع_مدیر_سامانه.pdf');
-  const publicManualPath = path.join(__dirname, '..', 'public', 'manual.pdf');
+  const publicDocsDir = path.join(__dirname, '..', 'public', 'docs');
+  if (!fs.existsSync(publicDocsDir)) fs.mkdirSync(publicDocsDir, { recursive: true });
+  const publicPdfPath = path.join(publicDocsDir, 'admin-manual.pdf');
 
   const htmlContent = `<!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -709,9 +710,8 @@ async function main() {
     }
   });
 
-  // کپی در پوشه public جهت دانلود مستقیم از سایت در صورت نیاز
+  // کپی در پوشه public/docs جهت دانلود اختیاری از صفحه تنظیمات سامانه
   fs.copyFileSync(artifactPdfPath, publicPdfPath);
-  fs.copyFileSync(artifactPdfPath, publicManualPath);
 
   await browser.close();
 
@@ -723,7 +723,6 @@ async function main() {
   console.log('PDF generated successfully at:');
   console.log('1.', artifactPdfPath);
   console.log('2.', publicPdfPath);
-  console.log('3.', publicManualPath);
 }
 
 main().catch(err => {
