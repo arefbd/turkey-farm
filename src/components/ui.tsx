@@ -294,13 +294,19 @@ export function DecimalInput({
     const curVal = text === '' || text === '.' || text === '-' ? 0 : num(text);
     const propVal = value === '' || value == null ? 0 : num(value);
     if (propVal !== curVal && !text.endsWith('.') && !text.endsWith('/') && !text.endsWith('٫')) {
-      setText(value === '' || value == null ? '' : String(propVal));
+      setText(value === '' || value == null || (value === 0 && text === '') ? '' : String(propVal));
     }
   }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let raw = toEn(e.target.value);
-    raw = raw.replace(/[/٫،,]/g, '.');
+    // حذف هوشمند ویرگول‌های هزارگان
+    raw = raw.replace(/,/g, (_, offset, str) => {
+      const next3 = str.slice(offset + 1, offset + 4);
+      if (/^\d{3}/.test(next3)) return '';
+      return '.';
+    });
+    raw = raw.replace(/[/٫]/g, '.');
     raw = raw.replace(/[^0-9.-]/g, '');
     const parts = raw.split('.');
     if (parts.length > 2) {
@@ -316,8 +322,6 @@ export function DecimalInput({
 
     const parsed = parseFloat(raw);
     if (Number.isFinite(parsed)) {
-      if (min !== undefined && parsed < min) return;
-      if (max !== undefined && parsed > max) return;
       onChange(parsed);
     }
   };
@@ -327,8 +331,10 @@ export function DecimalInput({
       setText('');
       onChange(0);
     } else {
-      const parsed = parseFloat(text);
+      let parsed = parseFloat(text);
       if (Number.isFinite(parsed)) {
+        if (min !== undefined && parsed < min) parsed = min;
+        if (max !== undefined && parsed > max) parsed = max;
         setText(String(parsed));
         onChange(parsed);
       }
@@ -348,6 +354,131 @@ export function DecimalInput({
       disabled={disabled}
       onChange={handleChange}
       onBlur={handleBlur}
+      onFocus={(e) => {
+        try {
+          e.target.select();
+        } catch {
+          // ignore
+        }
+      }}
     />
+  );
+}
+
+/** استپر انتخاب و تنظیم ساعت و دقیقه با دکمه‌های کم و زیاد شدن */
+export function TimeStepper({
+  value,
+  onChange,
+  className = '',
+}: {
+  value?: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  const formatTime = (h: number, m: number) =>
+    `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+  const currentVal = value && value.trim() ? value : '';
+
+  const parseTime = (str: string): { h: number; m: number } => {
+    const en = toEn(str || '');
+    const parts = en.split(':').map((p) => parseInt(p.trim(), 10));
+    const now = new Date();
+    const h = Number.isFinite(parts[0]) ? parts[0] : now.getHours();
+    const m = Number.isFinite(parts[1]) ? parts[1] : now.getMinutes();
+    return {
+      h: Math.min(23, Math.max(0, h)),
+      m: Math.min(59, Math.max(0, m)),
+    };
+  };
+
+  const step = (hDelta: number, mDelta: number) => {
+    const { h, m } = parseTime(currentVal);
+    let totalMinutes = h * 60 + m + (hDelta * 60 + mDelta);
+    totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
+    const newH = Math.floor(totalMinutes / 60);
+    const newM = totalMinutes % 60;
+    onChange(formatTime(newH, newM));
+  };
+
+  const setNow = () => {
+    const now = new Date();
+    onChange(formatTime(now.getHours(), now.getMinutes()));
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = toEn(e.target.value).replace(/[^0-9:]/g, '');
+    if (raw.length === 2 && !raw.includes(':') && !currentVal.includes(':')) {
+      raw += ':';
+    }
+    onChange(raw);
+  };
+
+  const handleBlur = () => {
+    const { h, m } = parseTime(currentVal);
+    onChange(formatTime(h, m));
+  };
+
+  const displayTime = currentVal || formatTime(new Date().getHours(), new Date().getMinutes());
+
+  return (
+    <div className={`time-stepper ${className}`.trim()}>
+      <button
+        type="button"
+        className="time-stepper-btn"
+        onClick={() => step(-1, 0)}
+        title="یک ساعت قبل (−۱ ساعت)"
+      >
+        −۱س
+      </button>
+      <button
+        type="button"
+        className="time-stepper-btn"
+        onClick={() => step(0, -15)}
+        title="۱۵ دقیقه قبل (−۱۵ دقیقه)"
+      >
+        −۱۵د
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        className="time-stepper-input"
+        value={displayTime}
+        onChange={handleInputChange}
+        onBlur={handleBlur}
+        onFocus={(e) => {
+          try {
+            e.target.select();
+          } catch {
+            // ignore
+          }
+        }}
+        placeholder="۱۴:۳۰"
+      />
+      <button
+        type="button"
+        className="time-stepper-btn"
+        onClick={() => step(0, 15)}
+        title="۱۵ دقیقه بعد (+۱۵ دقیقه)"
+      >
+        +۱۵د
+      </button>
+      <button
+        type="button"
+        className="time-stepper-btn"
+        onClick={() => step(1, 0)}
+        title="یک ساعت بعد (+۱ ساعت)"
+      >
+        +۱س
+      </button>
+      <button
+        type="button"
+        className="time-stepper-btn now"
+        onClick={setNow}
+        title="تنظیم خودکار به ساعت فعلی سیستم"
+      >
+        الان
+      </button>
+    </div>
   );
 }

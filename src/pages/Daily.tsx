@@ -235,7 +235,22 @@ export function Daily() {
                     return (
                       <tr key={r.id}>
                         <td>
-                          <b>{format(r.date, 'short')}</b>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <b>{format(r.date, 'short')}</b>
+                            {r.time && (
+                              <span
+                                className="badge"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '1px 6px',
+                                  background: 'var(--surface-sunken)',
+                                  color: 'var(--text-muted)',
+                                }}
+                              >
+                                {r.time}
+                              </span>
+                            )}
+                          </div>
                           <div style={{ color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 600 }}>
                             سن {n(r.age)} روز
                           </div>

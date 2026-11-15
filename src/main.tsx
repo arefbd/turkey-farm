@@ -20,7 +20,7 @@ createRoot(root).render(
 
 /* پاکسازی خودکار کش‌های قدیمی در هر بار راه‌اندازی نسخه جدید */
 if (typeof window !== 'undefined') {
-  const CURRENT_VER = 'v3.0.0';
+  const CURRENT_VER = 'v3.1.0';
   const savedVer = localStorage.getItem('tf_app_version');
   if (savedVer !== CURRENT_VER) {
     localStorage.setItem('tf_app_version', CURRENT_VER);

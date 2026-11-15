@@ -64,6 +64,8 @@ const PATHS: Record<string, React.ReactNode> = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  maximize: <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />,
+  minimize: <path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7" />,
   edit: (
     <>
       <path d="M12 20h9" />

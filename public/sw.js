@@ -1,5 +1,5 @@
-/* سرویس‌ورکر مزرعه بوقلمون — نسخه v3.0.0 - پایدار و ضد آلودگی فایل PDF */
-const VERSION = 'v3.0.0';
+/* سرویس‌ورکر مزرعه بوقلمون — نسخه v3.1.0 - پایدار و ضد آلودگی فایل PDF */
+const VERSION = 'v3.1.0';
 const CACHE = 'turkey-farm-' + VERSION;
 const SCOPE = self.registration.scope;
 

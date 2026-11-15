@@ -23,6 +23,102 @@ export const FEED_STAGE_LABELS: Record<FeedStage, { label: string; period: strin
   custom: { label: 'سفارشی / آزمایشی', period: 'ویژه مزرعه', targetProtein: 22, icon: '🧪' },
 };
 
+/**
+ * محاسبه خودکار و دقیق میانگین موزون نرخ هر کیلو ماده اولیه از فاکتورهای خرید انبار
+ * فرمول: مجموع (مقدار خرید × فی خرید) ÷ مجموع کل کیلوگرم خریداری‌شده
+ */
+export function computeWeightedAverageRate(
+  rawName: string,
+  state: { transactions: any[]; inventory: any[]; expenses?: any[] }
+): { price: number; desc: string; count: number; totalQty: number } {
+  if (!rawName || !rawName.trim()) {
+    return { price: 0, desc: 'بدون نام', count: 0, totalQty: 0 };
+  }
+
+  const clean = (str: string) =>
+    (str || '')
+      .toLowerCase()
+      .replace(/[\s‌\-_()]+/g, '')
+      .replace(/ی/g, 'ی')
+      .replace(/ي/g, 'ی')
+      .replace(/ک/g, 'ک')
+      .replace(/ك/g, 'ک');
+
+  const target = clean(rawName);
+
+  // ۱. اولویت اول: فاکتورهای خرید در بخش معاملات (میانگین موزون رسمی)
+  let sumCost = 0;
+  let sumQty = 0;
+  let txMatches = 0;
+
+  for (const tx of state.transactions || []) {
+    if (tx.type !== 'purchase') continue;
+    for (const it of tx.items || []) {
+      const itName = clean(it.name);
+      if (itName && (itName.includes(target) || target.includes(itName))) {
+        const q = num(it.qty);
+        const p = num(it.price);
+        if (q > 0 && p > 0) {
+          sumQty += q;
+          sumCost += q * p;
+          txMatches++;
+        }
+      }
+    }
+  }
+
+  if (sumQty > 0 && sumCost > 0) {
+    const avg = Math.round(sumCost / sumQty);
+    return {
+      price: avg,
+      desc: `میانگین موزون ${n(txMatches)} خرید (${n(sumQty)} کیلو)`,
+      count: txMatches,
+      totalQty: sumQty,
+    };
+  }
+
+  // ۲. اولویت دوم: نرخ ثبت‌شده در کاردکس موجودی انبار
+  const invMatched = (state.inventory || []).find((i) => {
+    const iName = clean(i.name);
+    return iName && (iName.includes(target) || target.includes(iName));
+  });
+
+  if (invMatched && num(invMatched.pricePerKg) > 0) {
+    return {
+      price: num(invMatched.pricePerKg),
+      desc: `نرخ ثبت‌شده در انبار (${invMatched.name})`,
+      count: 1,
+      totalQty: num(invMatched.qty),
+    };
+  }
+
+  // ۳. اولویت سوم: هزینه‌های مرتبط با خرید دان و خوراک
+  for (const exp of state.expenses || []) {
+    const expTitle = clean((exp.title || '') + ' ' + (exp.sub || ''));
+    if (expTitle && (expTitle.includes(target) || target.includes(expTitle))) {
+      const q = num(exp.qty);
+      const a = num(exp.amount);
+      if (q > 0 && a > 0) {
+        sumQty += q;
+        sumCost += a;
+        txMatches++;
+      }
+    }
+  }
+
+  if (sumQty > 0 && sumCost > 0) {
+    const avg = Math.round(sumCost / sumQty);
+    return {
+      price: avg,
+      desc: `میانگین هزینه خوراک (${n(sumQty)} کیلو)`,
+      count: txMatches,
+      totalQty: sumQty,
+    };
+  }
+
+  return { price: 0, desc: 'نرخ خریدی در انبار یافت نشد', count: 0, totalQty: 0 };
+}
+
 export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void }) {
   const s = useApp();
   const { toast } = useUI();
@@ -36,15 +132,27 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
   const [items, setItems] = useState<FormulaItem[]>(() => {
     const src = editing?.items;
     if (src && src.length) return src.map((i) => ({ ...i }));
-    return [
-      { name: 'ذرت دانه‌ای', percent: 50, pricePerKg: 18500, protein: 8.5, energyKcal: 3350 },
-      { name: 'کنجاله سویا', percent: 35, pricePerKg: 28000, protein: 44, energyKcal: 2250 },
-      { name: 'کنسانتره بوقلمون', percent: 5, pricePerKg: 65000, protein: 30, energyKcal: 1800 },
-      { name: 'روغن مایع خوراکی', percent: 2.5, pricePerKg: 58000, protein: 0, energyKcal: 8800 },
-      { name: 'دی‌کلسیم فسفات (DCP)', percent: 1.5, pricePerKg: 35000, protein: 0, energyKcal: 0 },
-      { name: 'کربنات کلسیم (صدف)', percent: 1.2, pricePerKg: 4000, protein: 0, energyKcal: 0 },
-      { name: 'مکمل دوقلو و اسیدهای آمینه', percent: 4.8, pricePerKg: 85000, protein: 15, energyKcal: 1200 },
+
+    const defaults = [
+      { name: 'ذرت دانه‌ای', percent: 50, protein: 8.5, energyKcal: 3350, fallbackPrice: 18500 },
+      { name: 'کنجاله سویا', percent: 35, protein: 44, energyKcal: 2250, fallbackPrice: 28000 },
+      { name: 'کنسانتره بوقلمون', percent: 5, protein: 30, energyKcal: 1800, fallbackPrice: 65000 },
+      { name: 'روغن مایع خوراکی', percent: 2.5, protein: 0, energyKcal: 8800, fallbackPrice: 58000 },
+      { name: 'دی‌کلسیم فسفات (DCP)', percent: 1.5, protein: 0, energyKcal: 0, fallbackPrice: 35000 },
+      { name: 'کربنات کلسیم (صدف)', percent: 1.2, protein: 0, energyKcal: 0, fallbackPrice: 4000 },
+      { name: 'مکمل دوقلو و اسیدهای آمینه', percent: 4.8, protein: 15, energyKcal: 1200, fallbackPrice: 85000 },
     ];
+
+    return defaults.map((d) => {
+      const avg = computeWeightedAverageRate(d.name, s);
+      return {
+        name: d.name,
+        percent: d.percent,
+        pricePerKg: avg.price > 0 ? avg.price : d.fallbackPrice,
+        protein: d.protein,
+        energyKcal: d.energyKcal,
+      };
+    });
   });
 
   // مواد موجود در انبار برای پیشنهاد خودکار نام و قیمت
@@ -95,15 +203,31 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
   };
 
   const onIngredientPicked = (idx: number, rawName: string) => {
-    const matched = s.inventory.find((i) => i.name.trim() === rawName.trim());
-    if (matched) {
-      updateItem(idx, {
-        name: matched.name,
-        pricePerKg: num(matched.pricePerKg) || items[idx].pricePerKg,
-      });
-    } else {
-      updateItem(idx, { name: rawName });
-    }
+    const avg = computeWeightedAverageRate(rawName, s);
+    const matchedInv = s.inventory.find((i) => i.name.trim() === rawName.trim());
+    const cleanName = matchedInv ? matchedInv.name : rawName;
+    const newPrice = avg.price > 0 ? avg.price : (matchedInv?.pricePerKg ? num(matchedInv.pricePerKg) : (items[idx]?.pricePerKg || 0));
+
+    updateItem(idx, {
+      name: cleanName,
+      pricePerKg: newPrice,
+    });
+  };
+
+  const refreshRatesFromWarehouse = () => {
+    let updatedCount = 0;
+    setItems((prev) =>
+      prev.map((it) => {
+        if (!it.name.trim()) return it;
+        const avg = computeWeightedAverageRate(it.name, s);
+        if (avg.price > 0) {
+          updatedCount++;
+          return { ...it, pricePerKg: avg.price };
+        }
+        return it;
+      })
+    );
+    toast(`نرخ‌های میانگین خرید ${n(updatedCount)} قلم از فاکتورهای انبار به‌روزرسانی و جایگذاری شد`);
   };
 
   const onStageChange = (newStage: FeedStage) => {
@@ -162,6 +286,8 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
   return (
     <Modal
       title={editing ? `ویرایش فرمول جیره — ${editing.name}` : 'طراحی فرمول جیره غذایی صنعتی بوقلمون'}
+      size="xl"
+      expandable={true}
       onClose={onClose}
       footer={
         <>
@@ -205,13 +331,22 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
         </div>
       </div>
 
-      {/* نحوه ورود مقادیر */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0 8px', flexWrap: 'wrap', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* نحوه ورود مقادیر و ابزارهای استعلام انبار */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0 8px', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>اقلام تشکیل‌دهنده جیره:</span>
           <span className="badge blue" style={{ fontSize: '0.8rem' }}>
             هدف استاندارد پروتئین: {stageInfo.targetProtein}٪
           </span>
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={refreshRatesFromWarehouse}
+            title="محاسبه خودکار میانگین موزون نرخ خرید اقلام بر اساس فاکتورهای معاملات و موجودی انبار"
+            style={{ fontSize: '0.78rem', color: 'var(--brand)', padding: '2px 8px', borderRadius: 8, border: '1px solid var(--line)' }}
+          >
+            ⚡ استعلام میانگین نرخ خرید از انبار
+          </button>
         </div>
         <Chips
           items={[
@@ -223,18 +358,18 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
         />
       </div>
 
-      {/* جدول مواد اولیه */}
-      <div className="tbl-wrap" style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-        <table className="tbl" style={{ fontSize: '0.86rem', margin: 0 }}>
+      {/* جدول مواد اولیه با عرض منعطف و پشتیبانی از انواع ارقام و اعشار */}
+      <div className="tbl-wrap" style={{ border: '1px solid var(--border)', borderRadius: 12, overflowX: 'auto' }}>
+        <table className="tbl" style={{ fontSize: '0.88rem', margin: 0, minWidth: 720 }}>
           <thead>
             <tr>
-              <th>نام ماده اولیه</th>
-              <th style={{ width: 100 }}>{mode === 'percent' ? 'درصد (٪)' : 'وزن (کیلو)'}</th>
-              {mode === 'unit' && <th style={{ width: 80 }}>درصد معادل</th>}
-              <th style={{ width: 120 }}>نرخ هر کیلو (تومان)</th>
-              <th style={{ width: 90 }}>پروتئین (CP ٪)</th>
-              <th style={{ width: 100 }}>انرژی (ME kcal)</th>
-              <th style={{ width: 40 }} />
+              <th style={{ minWidth: 230 }}>نام ماده اولیه</th>
+              <th style={{ width: 110, minWidth: 100 }}>{mode === 'percent' ? 'درصد (٪)' : 'وزن (کیلو)'}</th>
+              {mode === 'unit' && <th style={{ width: 90, minWidth: 80 }}>درصد معادل</th>}
+              <th style={{ width: 145, minWidth: 135 }}>نرخ هر کیلو (تومان)</th>
+              <th style={{ width: 100, minWidth: 90 }}>پروتئین (CP ٪)</th>
+              <th style={{ width: 110, minWidth: 100 }}>انرژی (ME kcal)</th>
+              <th style={{ width: 44 }} />
             </tr>
           </thead>
           <tbody>
@@ -248,23 +383,26 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
                   <td>
                     <input
                       className="input"
-                      style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+                      style={{ padding: '6px 10px', fontSize: '0.88rem', minWidth: 200 }}
                       list={`raw-feed-list-${idx}`}
                       value={row.name}
                       onChange={(e) => onIngredientPicked(idx, e.target.value)}
                       placeholder="انتخاب یا تایپ ماده خام..."
                     />
                     <datalist id={`raw-feed-list-${idx}`}>
-                      {rawIngredients.map((ri) => (
-                        <option key={ri.id} value={ri.name}>
-                          موجودی انبار: {n(ri.qty)} {ri.unit} · نرخ: {n(ri.pricePerKg)}
-                        </option>
-                      ))}
+                      {rawIngredients.map((ri) => {
+                        const avg = computeWeightedAverageRate(ri.name, s);
+                        return (
+                          <option key={ri.id} value={ri.name}>
+                            موجودی انبار: {n(ri.qty)} {ri.unit} · {avg.desc || `نرخ: ${n(ri.pricePerKg)} تومان`}
+                          </option>
+                        );
+                      })}
                     </datalist>
                   </td>
                   <td>
                     <DecimalInput
-                      style={{ padding: '4px 8px', textAlign: 'center' }}
+                      style={{ padding: '6px 8px', textAlign: 'center' }}
                       value={row.percent}
                       placeholder={mode === 'percent' ? 'درصد' : 'کیلو'}
                       onChange={(val) => updateItem(idx, { percent: val })}
@@ -276,34 +414,27 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
                     </td>
                   )}
                   <td>
-                    <input
-                      className="input"
-                      type="number"
-                      style={{ padding: '4px 8px', textAlign: 'center' }}
-                      value={row.pricePerKg || ''}
-                      onChange={(e) => updateItem(idx, { pricePerKg: num(e.target.value) })}
+                    <DecimalInput
+                      style={{ padding: '6px 8px', textAlign: 'center' }}
+                      value={row.pricePerKg}
                       placeholder="۰"
+                      onChange={(val) => updateItem(idx, { pricePerKg: val })}
                     />
                   </td>
                   <td>
-                    <input
-                      className="input"
-                      type="number"
-                      step="0.1"
-                      style={{ padding: '4px 8px', textAlign: 'center' }}
-                      value={row.protein || ''}
-                      onChange={(e) => updateItem(idx, { protein: num(e.target.value) })}
+                    <DecimalInput
+                      style={{ padding: '6px 8px', textAlign: 'center' }}
+                      value={row.protein}
                       placeholder="۰"
+                      onChange={(val) => updateItem(idx, { protein: val })}
                     />
                   </td>
                   <td>
-                    <input
-                      className="input"
-                      type="number"
-                      style={{ padding: '4px 8px', textAlign: 'center' }}
-                      value={row.energyKcal || ''}
-                      onChange={(e) => updateItem(idx, { energyKcal: num(e.target.value) })}
+                    <DecimalInput
+                      style={{ padding: '6px 8px', textAlign: 'center' }}
+                      value={row.energyKcal}
                       placeholder="۰"
+                      onChange={(val) => updateItem(idx, { energyKcal: val })}
                     />
                   </td>
                   <td>
@@ -312,6 +443,7 @@ export function FormulaForm({ id, onClose }: { id?: string; onClose: () => void 
                       className="btn ghost small"
                       style={{ color: 'var(--danger)', padding: 4 }}
                       onClick={() => removeItem(idx)}
+                      title="حذف این ماده اولیه"
                     >
                       ✕
                     </button>
@@ -518,21 +650,17 @@ export function BatchForm({
 
         <div className="field half">
           <label className="lbl">مقدار کل تولید (کیلوگرم) *</label>
-          <input
-            className="input"
-            type="number"
+          <DecimalInput
             value={qtyKg}
-            onChange={(e) => setQtyKg(e.target.value)}
+            onChange={(val) => setQtyKg(String(val))}
             placeholder="مثلاً ۲۰۰۰"
           />
         </div>
         <div className="field half">
           <label className="lbl">هزینه آسیاب و میکسر به ازای هر کیلو (تومان)</label>
-          <input
-            className="input"
-            type="number"
+          <DecimalInput
             value={millingCostPerKg}
-            onChange={(e) => setMillingCostPerKg(e.target.value)}
+            onChange={(val) => setMillingCostPerKg(String(val))}
             placeholder="مثلاً ۴۵۰"
           />
         </div>

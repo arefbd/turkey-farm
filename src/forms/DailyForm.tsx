@@ -3,6 +3,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Modal, useUI } from '../components/Modal';
+import { TimeStepper } from '../components/ui';
 import { actions, flockById, flockStats, num, useApp } from '../data/store';
 import { diff, today } from '../lib/jalali';
 import { n } from '../lib/format';
@@ -30,6 +31,11 @@ export function DailyForm({
 
   const [flockId, setFlockId] = useState(defaultFlockId);
   const [date, setDate] = useState(editing?.date || today());
+  const [time, setTime] = useState(() => {
+    if (editing?.time) return editing.time;
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  });
   const [mortality, setMortality] = useState(editing?.mortality ? String(editing.mortality) : '0');
   const [culled, setCulled] = useState(editing?.culled ? String(editing.culled) : '0');
   const [feedKg, setFeedKg] = useState(editing?.feedKg ? String(editing.feedKg) : '');
@@ -94,6 +100,7 @@ export function DailyForm({
       id: editing?.id,
       flockId,
       date,
+      time: time.trim() || undefined,
       age: currentAge,
       mortality: num(mortality),
       culled: num(culled),
@@ -156,6 +163,11 @@ export function DailyForm({
         <div className="field half">
           <label className="lbl">تاریخ ثبت</label>
           <input className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+
+        <div className="field half">
+          <label className="lbl">ساعت ثبت عملیات (با قابلیت کم و زیاد شدن)</label>
+          <TimeStepper value={time} onChange={setTime} />
         </div>
 
         {/* نوار اطلاعات گله در این روز */}

@@ -185,6 +185,8 @@ export interface Flock extends Base {
 export interface DailyRecord extends Base {
   flockId: string;
   date: string;
+  /** ساعت ثبت عملیات (HH:mm) */
+  time?: string;
   age: number;
   mortality: number;
   culled: number;

@@ -17,15 +17,18 @@ export function Modal({
   children,
   footer,
   size,
+  expandable = false,
   onClose,
 }: {
   title: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   size?: string;
+  expandable?: boolean;
   onClose: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setOpen(true));
@@ -51,12 +54,38 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={'modal ' + (size || '')} role="dialog" aria-modal="true">
+      <div
+        className={
+          'modal ' +
+          (size || '') +
+          (isExpanded ? ' is-expanded' : '')
+        }
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="بستن" type="button">
-            <Icon name="close" size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+            <h3 style={{ margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {title}
+            </h3>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {expandable && (
+              <button
+                className="icon-btn"
+                onClick={() => setIsExpanded((prev) => !prev)}
+                title={isExpanded ? 'کوچک‌نمایی پنجره (بازگشت)' : 'بزرگ‌نمایی و اتساع کامل پنجره'}
+                aria-label={isExpanded ? 'کوچک‌نمایی' : 'بزرگ‌نمایی'}
+                type="button"
+                style={{ color: isExpanded ? 'var(--brand)' : 'inherit' }}
+              >
+                <Icon name={isExpanded ? 'minimize' : 'maximize'} size={18} />
+              </button>
+            )}
+            <button className="icon-btn" onClick={onClose} aria-label="بستن" type="button">
+              <Icon name="close" size={18} />
+            </button>
+          </div>
         </div>
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-foot">{footer}</div> : null}
