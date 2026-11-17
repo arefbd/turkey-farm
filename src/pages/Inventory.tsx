@@ -566,6 +566,22 @@ export function Inventory() {
             </button>
           ) : (
             <>
+              <button
+                className="btn"
+                title="همگام‌سازی و بازیابی خودکار اقلام فاکتورهای خرید معاملات با موجودی انبارها"
+                onClick={() => {
+                  const res = actions.reconcilePurchasesWithInventory();
+                  if (res.addedCount > 0 || res.updatedCount > 0) {
+                    ui.toast(
+                      `همگام‌سازی با موفقیت انجام شد: ${res.addedCount} قلم کالای جدید ایجاد و ${res.updatedCount} تغییر وضعیت در انبار اعمال گردید.`
+                    );
+                  } else {
+                    ui.toast('تمام اقلام فاکتورهای خرید قبلاً در انبارها و کاردکس ثبت و همگام شده‌اند.');
+                  }
+                }}
+              >
+                <Icon name="refresh" size={16} /> همگام‌سازی خریدها با انبار
+              </button>
               <button className="btn" onClick={() => ui.open(<InventoryMoveForm onClose={ui.close} />)}>
                 <Icon name="upload" size={16} /> ورود / خروج
               </button>

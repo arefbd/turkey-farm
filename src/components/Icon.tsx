@@ -202,6 +202,21 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
     </>
   ),
+  shield: (
+    <>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </>
+  ),
+  activity: (
+    <>
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof PATHS;

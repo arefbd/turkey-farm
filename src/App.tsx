@@ -24,6 +24,7 @@ import { Products } from './pages/Products';
 import { Tasks } from './pages/Tasks';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import { SystemHealth } from './pages/SystemHealth';
 import {
   DailyForm,
   ExpenseForm,
@@ -55,6 +56,7 @@ export const NAV: NavItem[] = [
   { id: 'inventory', label: 'انبار', icon: 'box', group: 'اصلی' },
   { id: 'feed', label: 'خوراک و فرمول', icon: 'feed', group: 'اصلی' },
   { id: 'reports', label: 'گزارش‌ها', icon: 'chart', group: 'اصلی' },
+  { id: 'health', label: 'مرکز کنترل سلامت', icon: 'shield', group: 'اصلی' },
   { id: 'settings', label: 'تنظیمات', icon: 'gear', group: 'اصلی' },
 ];
 
@@ -111,6 +113,8 @@ function Page({ name, param }: { name: string; param: string }) {
       return <Tasks />;
     case 'reports':
       return <Reports />;
+    case 'health':
+      return <SystemHealth />;
     case 'settings':
       return <Settings />;
     default:

@@ -422,6 +422,23 @@ export async function hydrate(targetUserId: string) {
     });
     synced = state;
     setFaDigits(state.settings.persianDigits !== false);
+
+    // بررسی و بازیابی خودکار موجودی انبارها از روی فاکتورهای خرید ثبت‌شده در معاملات
+    const needsReconciliation = state.transactions.some(
+      (t) =>
+        t.type === 'purchase' &&
+        t.items?.some((it) => {
+          const name = String(it.name || '').trim();
+          const item = state.inventory.find((i) => i.name.trim() === name);
+          if (!item) return true;
+          if (t.warehouseId && num(item.warehouseQuantities?.[t.warehouseId] || 0) <= 0) return true;
+          return false;
+        })
+    );
+    if (needsReconciliation) {
+      actions.reconcilePurchasesWithInventory();
+    }
+
     setSync({ status: 'ready', error: '' });
   } catch (e) {
     fail(e);
@@ -558,9 +575,13 @@ export const actions = {
     }
 
     const moves: StockMove[] = [];
+    const matchedNames = new Set<string>();
+
     const inventory = state.inventory.map((item) => {
-      const hit = entries.find(([name]) => name === String(item.name || '').trim());
+      const hit = entries.find(([name]) => name.trim() === String(item.name || '').trim());
       if (!hit) return item;
+      matchedNames.add(hit[0].trim());
+
       const before = num(item.qty);
       const after = Math.max(0, before + hit[1]);
       if (after === before && hit[1] === 0) return item;
@@ -612,8 +633,231 @@ export const actions = {
       return updated;
     });
 
-    if (!moves.length) return;
-    commit({ ...state, inventory, stockMoves: [...moves, ...state.stockMoves] });
+    // اقلامی از فاکتور خرید که هنوز در انبار تعریف نشده‌اند، خودکار اضافه می‌شوند
+    const newItems: InventoryItem[] = [];
+    for (const [name, qtyDelta] of entries) {
+      const cleanName = name.trim();
+      if (!matchedNames.has(cleanName) && qtyDelta > 0) {
+        const matchedProd = state.products.find((p) => p.name.trim() === cleanName);
+        const itemId = uid();
+        const nextCode = `K-${String(state.inventory.length + newItems.length + 1001).padStart(4, '0')}`;
+        const unit = matchedProd?.unit || 'کیلوگرم';
+        const pricePerKg =
+          meta?.unitPrice ||
+          (meta?.totalCost && qtyDelta > 0 ? Math.round(meta.totalCost / qtyDelta) : 0);
+        const whMap: Record<string, number> = {};
+        if (resolvedWhId) {
+          whMap[resolvedWhId] = qtyDelta;
+        }
+
+        const newItem: InventoryItem = {
+          id: itemId,
+          code: nextCode,
+          name: cleanName,
+          unit,
+          qty: qtyDelta,
+          min: 100,
+          pricePerKg,
+          cat: matchedProd?.category || 'مواد اولیه',
+          active: true,
+          note: `ایجاد خودکار پس از ثبت خرید ${meta?.invoiceNo || ''}`.trim(),
+          expiry: '',
+          warehouseQuantities: whMap,
+          createdAt: Date.now(),
+        };
+        newItems.push(newItem);
+
+        moves.push({
+          id: uid(),
+          createdAt: Date.now(),
+          date: meta?.date || J.today(),
+          itemId: newItem.id,
+          itemName: newItem.name,
+          unit: newItem.unit,
+          kind: 'in',
+          qty: qtyDelta,
+          before: 0,
+          after: qtyDelta,
+          reason: meta?.reason || 'خرید',
+          refType: meta?.refType || 'transaction',
+          refId: meta?.refId || meta?.invoiceNo || '',
+          note: meta?.note || '',
+          warehouseId: resolvedWhId,
+          warehouseName: resolvedWhName,
+          sourceWarehouseId: meta?.sourceWarehouseId,
+          sourceWarehouseName: meta?.sourceWarehouseName,
+          targetWarehouseId: resolvedWhId,
+          targetWarehouseName: resolvedWhName,
+          batchNo: meta?.batchNo,
+          invoiceNo: meta?.invoiceNo,
+          unitPrice: pricePerKg,
+          totalCost: meta?.totalCost,
+        });
+      }
+    }
+
+    const nextInventory = [...inventory, ...newItems];
+    if (!moves.length && !newItems.length) return;
+    commit({ ...state, inventory: nextInventory, stockMoves: [...moves, ...state.stockMoves] });
+  },
+
+  /** همگام‌سازی و بازیابی خودکار موجودی انبار از روی تمامی فاکتورهای خرید ثبت‌شده */
+  reconcilePurchasesWithInventory(): { addedCount: number; updatedCount: number; details: string[] } {
+    const details: string[] = [];
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    const currentInv = [...state.inventory];
+    const currentMoves = [...state.stockMoves];
+
+    const purchases = state.transactions.filter((t) => t.type === 'purchase');
+
+    for (const tx of purchases) {
+      let whId = tx.warehouseId;
+      let whName = tx.warehouse;
+      if (!whId && tx.warehouse) {
+        const foundWh = state.warehouses.find((w) => w.name.trim() === tx.warehouse.trim());
+        if (foundWh) {
+          whId = foundWh.id;
+          whName = foundWh.name;
+        }
+      }
+      if (!whId && state.warehouses.length > 0) {
+        const defaultRawWh = state.warehouses.find((w) => w.type === 'raw_feed') || state.warehouses[0];
+        whId = defaultRawWh.id;
+        whName = defaultRawWh.name;
+      }
+
+      for (const it of tx.items || []) {
+        const rawName = String(it.name || '').trim();
+        const qty = num(it.qty);
+        if (!rawName || qty <= 0) continue;
+
+        let invItem = currentInv.find((i) => i.name.trim() === rawName);
+        if (!invItem) {
+          const matchedProd = state.products.find((p) => p.name.trim() === rawName);
+          const nextCode = `K-${String(currentInv.length + 1001).padStart(4, '0')}`;
+          invItem = {
+            id: uid(),
+            code: nextCode,
+            name: rawName,
+            unit: it.unit || matchedProd?.unit || 'کیلوگرم',
+            qty: 0,
+            min: 100,
+            pricePerKg: num(it.price) || 0,
+            cat: matchedProd?.category || 'مواد اولیه',
+            active: true,
+            note: `ایجاد خودکار از فاکتور خرید ${tx.code}`,
+            expiry: '',
+            warehouseQuantities: {},
+            createdAt: Date.now(),
+          };
+          currentInv.push(invItem);
+          addedCount++;
+          details.push(`تعریف کالای «${rawName}» در انبار`);
+        }
+
+        const existingMove = currentMoves.find(
+          (m) =>
+            ((m.refId === tx.code || m.invoiceNo === tx.code) &&
+              (m.itemName.trim() === rawName || m.itemId === invItem?.id)) ||
+            // تطابق حرکت‌های ثبت‌شده اولیه که شناسه انبار یا کد فاکتور در آن‌ها تنظیم نشده بود
+            (num(m.qty) === qty &&
+              !m.warehouseId &&
+              (m.itemName.trim() === rawName ||
+                (rawName.includes('سویا') && m.itemName.includes('سویا')) ||
+                (rawName === 'ذرت' && m.itemName === 'ذرت')))
+        );
+
+        if (!existingMove) {
+          const before = num(invItem.qty);
+          const after = before + qty;
+          invItem.qty = after;
+
+          if (whId) {
+            const whMap = { ...(invItem.warehouseQuantities || {}) };
+            whMap[whId] = num(whMap[whId] || 0) + qty;
+            invItem.warehouseQuantities = whMap;
+          }
+
+          currentMoves.push({
+            id: uid(),
+            createdAt: Date.now(),
+            date: tx.date || J.today(),
+            itemId: invItem.id,
+            itemName: invItem.name,
+            unit: invItem.unit,
+            kind: 'in',
+            qty,
+            before,
+            after,
+            reason: 'خرید ثبت‌شده از مسیر معاملات',
+            refType: 'transaction',
+            refId: tx.code,
+            invoiceNo: tx.code,
+            warehouseId: whId,
+            warehouseName: whName,
+            targetWarehouseId: whId,
+            targetWarehouseName: whName,
+            unitPrice: num(it.price),
+            totalCost: num(it.price) * qty,
+            note: `همگام‌سازی خودکار خرید ${tx.code}`,
+          });
+
+          updatedCount++;
+          details.push(`انتقال ${qty.toLocaleString('fa-IR')} ${invItem.unit} «${rawName}» به ${whName || 'انبار'}`);
+        } else {
+          // تطبیق و اصلاح سند حواله موجود بدون ایجاد سند المثنی یا دستکاری داده‌های واقعی
+          let changed = false;
+          if (whId && (!existingMove.warehouseId || existingMove.warehouseId !== whId)) {
+            existingMove.warehouseId = whId;
+            existingMove.warehouseName = whName;
+            existingMove.targetWarehouseId = whId;
+            existingMove.targetWarehouseName = whName;
+            changed = true;
+          }
+          if (!existingMove.refId || existingMove.refId.startsWith('K-')) {
+            existingMove.refId = tx.code;
+            existingMove.invoiceNo = tx.code;
+            changed = true;
+          }
+          if (existingMove.itemName !== invItem.name) {
+            existingMove.itemName = invItem.name;
+            existingMove.itemId = invItem.id;
+            changed = true;
+          }
+          if (whId) {
+            const whMap = { ...(invItem.warehouseQuantities || {}) };
+            whMap[whId] = Math.max(num(whMap[whId] || 0), num(existingMove.qty));
+            invItem.warehouseQuantities = whMap;
+          }
+          if (num(invItem.qty) === 0) {
+            invItem.qty = qty;
+          }
+          if (changed) {
+            updatedCount++;
+            details.push(`اتصال فاکتور ${tx.code} («${rawName}») به ${whName || 'انبار'}`);
+          }
+        }
+      }
+    }
+
+    // تکمیل warehouseQuantities برای اقلامی که حرکت دارند
+    for (const move of currentMoves) {
+      if (move.warehouseId && move.kind === 'in') {
+        const item = currentInv.find((i) => i.id === move.itemId || i.name.trim() === move.itemName.trim());
+        if (item) {
+          const whMap = { ...(item.warehouseQuantities || {}) };
+          if (num(whMap[move.warehouseId] || 0) <= 0) {
+            whMap[move.warehouseId] = num(item.qty);
+            item.warehouseQuantities = whMap;
+          }
+        }
+      }
+    }
+
+    commit({ ...state, inventory: currentInv, stockMoves: currentMoves });
+    return { addedCount, updatedCount, details };
   },
 
   deleteStockMove(moveId: string): void {
